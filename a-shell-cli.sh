@@ -10,10 +10,11 @@ unset HERMES_HOME
 export HERMES_HOME=.
 export HERMES_WEBUI_AGENT_DIR="$ROOT_DIR/hermes-agent"
 export HERMES_WEBUI_ASHELL_MODE=1
-export PYTHONPATH="hermes-agent${PYTHONPATH:+:$PYTHONPATH}"
 
 cd "$ROOT_DIR"
 mkdir -p "$HERMES_HOME"
+AGENT_PYTHON_PATH=$("$PYTHON_BIN" -c 'import os; print(os.path.abspath("hermes-agent"))')
+export PYTHONPATH="$AGENT_PYTHON_PATH${PYTHONPATH:+:$PYTHONPATH}"
 
 if [ ! -f "$ROOT_DIR/hermes-agent/hermes_cli/main.py" ]; then
   printf '%s\n' "Hermes CLI source is missing: $ROOT_DIR/hermes-agent" >&2
