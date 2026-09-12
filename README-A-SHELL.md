@@ -97,6 +97,24 @@ export HERMES_A_SHELL_HOME=./profile
 
 模型/API 配置沿用 Hermes Agent 的配置目录。不要把 API key 写入此压缩包或 Git。
 
+## 单文件 Hermes CLI
+
+专案根目录的 `hermes` 是一个可由 a-Shell 原生 Python 执行的单文件 zipapp，入口为内部的 `cli.py`：
+
+```sh
+python3 hermes --help
+python3 hermes model
+python3 hermes auth --help
+```
+
+该文件内嵌 Hermes Agent 源码和可识别的纯 Python 依赖。原生扩展不会被伪装成 WASM 或错误打包；如果 a-Shell 已提供对应模块，运行时会使用它，否则依赖该扩展的 provider/功能不可用。构建命令为：
+
+```sh
+python3 build-hermes.py
+```
+
+归档内的 `BUNDLE_NATIVE_POLICY.txt` 列出打包策略。构建器会临时下载依赖并在完成后删除 staging 目录。
+
 ## 当前限制
 
 - 启动脚本不会自动运行官方 Hermes 安装器
