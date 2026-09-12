@@ -6,14 +6,15 @@ cd "$ROOT_DIR"
 PYTHON_BIN=${HERMES_WEBUI_PYTHON:-python3}
 export HERMES_WEBUI_PYTHON="$PYTHON_BIN"
 export HERMES_WEBUI_AGENT_DIR="$ROOT_DIR/hermes-agent"
-# a-Shell may predefine HERMES_HOME as a non-writable $HOME/.hermes. Do not
-# preserve that inherited value; this self-contained package owns its profile.
-# Use HERMES_A_SHELL_HOME when an alternate writable profile is intentional.
-export HERMES_HOME=${HERMES_A_SHELL_HOME:-.}
-export HERMES_WEBUI_STATE_DIR=${HERMES_A_SHELL_STATE_DIR:-"$HERMES_HOME/webui"}
-# Keep the literal relative path. On a-Shell, `.` is accepted by the sandbox
-# while the equivalent resolved absolute path can fail os.access().
-export HERMES_WEBUI_DEFAULT_WORKSPACE=${HERMES_A_SHELL_WORKSPACE:-.}
+# a-Shell may predefine HERMES_HOME as a non-writable $HOME/.hermes. Clear the
+# inherited value first, then assign the literal relative path that a-Shell
+# accepts. This package intentionally uses its current directory as its home.
+unset HERMES_HOME HERMES_WEBUI_STATE_DIR HERMES_WEBUI_DEFAULT_WORKSPACE
+export HERMES_HOME=.
+export HERMES_WEBUI_STATE_DIR=./webui
+# The literal `.` is required: a-Shell may reject the equivalent absolute path
+# during os.access() even though the current directory is writable.
+export HERMES_WEBUI_DEFAULT_WORKSPACE=.
 export HERMES_WEBUI_HOST=${HERMES_WEBUI_HOST:-127.0.0.1}
 export HERMES_WEBUI_PORT=${HERMES_WEBUI_PORT:-8787}
 export PYTHONPATH="hermes-webui:hermes-agent${PYTHONPATH:+:$PYTHONPATH}"
