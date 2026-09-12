@@ -35,6 +35,26 @@ ENTRYPOINT = '''
 
 def entrypoint():
     """Dispatch the single-file archive to the full upstream CLI."""
+    import os
+    import sys
+    from pathlib import Path
+
+    # a-Shell's $HOME may be read-only. Keep this single-file bundle's state
+    # beside the executable unless the caller explicitly selects another home.
+    bundle_home = os.environ.get("HERMES_BUNDLE_HOME") or str(Path(sys.argv[0]).resolve().parent)
+    os.environ["HERMES_HOME"] = bundle_home
+    os.environ.setdefault("HERMES_WEBUI_ASHELL_MODE", "1")
+
+    # a-Shell may expose a read-only HOME. Hermes and its dependencies use
+    # HOME for configuration, so redirect it only when a write probe fails.
+    current_home = Path(os.path.expanduser("~"))
+    try:
+        current_home.mkdir(parents=True, exist_ok=True)
+        probe = current_home / ".hermes-write-probe"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+    except (OSError, PermissionError):
+        os.environ["HOME"] = bundle_home
     from hermes_cli.main import main as upstream_main
     return upstream_main()
 '''
