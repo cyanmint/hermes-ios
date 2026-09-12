@@ -6,15 +6,18 @@ cd "$ROOT_DIR"
 PYTHON_BIN=${HERMES_WEBUI_PYTHON:-python3}
 export HERMES_WEBUI_PYTHON="$PYTHON_BIN"
 export HERMES_WEBUI_AGENT_DIR="$ROOT_DIR/hermes-agent"
-export HERMES_HOME=${HERMES_HOME:-"$ROOT_DIR/.hermes"}
+export HERMES_HOME=${HERMES_HOME:-.}
 export HERMES_WEBUI_STATE_DIR=${HERMES_WEBUI_STATE_DIR:-"$HERMES_HOME/webui"}
-export HERMES_WEBUI_DEFAULT_WORKSPACE=${HERMES_WEBUI_DEFAULT_WORKSPACE:-"$ROOT_DIR/workspace"}
+# a-Shell can reject a newly-created child directory even when the extracted
+# package directory itself is writable. The package directory is the same
+# location users already verified with `export ...=.`.
+export HERMES_WEBUI_DEFAULT_WORKSPACE=${HERMES_WEBUI_DEFAULT_WORKSPACE:-"$ROOT_DIR"}
 export HERMES_WEBUI_HOST=${HERMES_WEBUI_HOST:-127.0.0.1}
 export HERMES_WEBUI_PORT=${HERMES_WEBUI_PORT:-8787}
 export PYTHONPATH="hermes-webui:hermes-agent${PYTHONPATH:+:$PYTHONPATH}"
 
 if ! mkdir -p "$HERMES_HOME" "$HERMES_WEBUI_DEFAULT_WORKSPACE" 2>/dev/null; then
-  HERMES_WEBUI_DEFAULT_WORKSPACE="$PWD/workspace"
+  HERMES_WEBUI_DEFAULT_WORKSPACE="$PWD"
   if ! mkdir -p "$HERMES_WEBUI_DEFAULT_WORKSPACE" 2>/dev/null; then
     HERMES_WEBUI_DEFAULT_WORKSPACE="$HOME/tmp/hermes-workspace"
     if ! mkdir -p "$HERMES_WEBUI_DEFAULT_WORKSPACE" 2>/dev/null; then

@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parent
 AGENT = ROOT / "hermes-agent"
 WEBUI = ROOT / "hermes-webui"
 os.environ.setdefault("HERMES_WEBUI_AGENT_DIR", str(AGENT))
-os.environ.setdefault("HERMES_HOME", str(Path.home() / ".hermes"))
-os.environ.setdefault("HERMES_WEBUI_STATE_DIR", str(Path.home() / ".hermes" / "webui"))
+os.environ.setdefault("HERMES_HOME", str(ROOT))
+os.environ.setdefault("HERMES_WEBUI_STATE_DIR", str(ROOT / "webui"))
 sys.path[:0] = [str(WEBUI), str(AGENT)]
 
 modules = ["yaml", "cryptography", "httpx"]
