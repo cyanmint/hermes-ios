@@ -51,12 +51,9 @@ export HERMES_WEBUI_DEFAULT_WORKSPACE="$PWD/workspace"
 sh a-shell-start.sh
 ```
 
-## 配置
-
-首次使用前，可以在 a-Shell 中设置：
-
+当前包会将 Hermes 状态、配置和 WebUI 数据保存到压缩包目录下的 `.hermes/`，将 workspace 保存到 `workspace/`。这样可以避开 a-Shell 不可写的 `$HOME` 根目录。
 ```sh
-export HERMES_HOME="$HOME/.hermes"
+export HERMES_HOME="$PWD/.hermes"
 export HERMES_WEBUI_PORT=8787
 ```
 
