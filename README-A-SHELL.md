@@ -43,6 +43,14 @@ sh a-shell-start.sh
 http://127.0.0.1:8787
 ```
 
+如果仍然出现 workspace 错误，可以手动执行：
+
+```sh
+mkdir -p "$HOME/hermes-workspace"
+export HERMES_WEBUI_DEFAULT_WORKSPACE="$HOME/hermes-workspace"
+sh a-shell-start.sh
+```
+
 ## 配置
 
 首次使用前，可以在 a-Shell 中设置：
