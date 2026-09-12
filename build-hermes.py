@@ -150,7 +150,7 @@ def main() -> None:
     download_wheels()
     copy_agent_source()
     embedded = embed_pure_dependencies()
-    zipapp.create_archive(STAGE, OUTPUT, interpreter="/usr/bin/env python3", main="cli:main")
+    zipapp.create_archive(STAGE, OUTPUT, interpreter="python3", main="cli:main")
     OUTPUT.chmod(0o755)
     print(f"created {OUTPUT}")
     print(f"embedded pure-Python wheels: {len(embedded)}")
