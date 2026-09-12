@@ -6,6 +6,7 @@ cd "$ROOT_DIR"
 PYTHON_BIN=${HERMES_WEBUI_PYTHON:-python3}
 export HERMES_WEBUI_PYTHON="$PYTHON_BIN"
 export HERMES_WEBUI_AGENT_DIR="$ROOT_DIR/hermes-agent"
+export HERMES_WEBUI_ASHELL_MODE=1
 # a-Shell may predefine HERMES_HOME as a non-writable $HOME/.hermes. Clear the
 # inherited value first, then assign the literal relative path that a-Shell
 # accepts. This package intentionally uses its current directory as its home.
