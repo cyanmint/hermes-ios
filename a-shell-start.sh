@@ -8,11 +8,23 @@ export HERMES_WEBUI_PYTHON="$PYTHON_BIN"
 export HERMES_WEBUI_AGENT_DIR="$ROOT_DIR/hermes-agent"
 export HERMES_HOME=${HERMES_HOME:-"$HOME/.hermes"}
 export HERMES_WEBUI_STATE_DIR=${HERMES_WEBUI_STATE_DIR:-"$HERMES_HOME/webui"}
-export HERMES_WEBUI_DEFAULT_WORKSPACE=${HERMES_WEBUI_DEFAULT_WORKSPACE:-"$HOME/hermes-workspace"}
+export HERMES_WEBUI_DEFAULT_WORKSPACE=${HERMES_WEBUI_DEFAULT_WORKSPACE:-"$ROOT_DIR/workspace"}
 export HERMES_WEBUI_HOST=${HERMES_WEBUI_HOST:-127.0.0.1}
 export HERMES_WEBUI_PORT=${HERMES_WEBUI_PORT:-8787}
 export PYTHONPATH="hermes-webui:hermes-agent${PYTHONPATH:+:$PYTHONPATH}"
-mkdir -p "$HERMES_WEBUI_DEFAULT_WORKSPACE"
+
+if ! mkdir -p "$HERMES_WEBUI_DEFAULT_WORKSPACE" 2>/dev/null; then
+  HERMES_WEBUI_DEFAULT_WORKSPACE="$PWD/workspace"
+  if ! mkdir -p "$HERMES_WEBUI_DEFAULT_WORKSPACE" 2>/dev/null; then
+    HERMES_WEBUI_DEFAULT_WORKSPACE="$HOME/tmp/hermes-workspace"
+    if ! mkdir -p "$HERMES_WEBUI_DEFAULT_WORKSPACE" 2>/dev/null; then
+      printf '%s\n' "Could not create a writable workspace." >&2
+      printf '%s\n' "Try: mkdir -p \"$PWD/workspace\"" >&2
+      exit 1
+    fi
+  fi
+fi
+export HERMES_WEBUI_DEFAULT_WORKSPACE
 
 if [ ! -f "hermes-webui/server.py" ]; then
   printf '%s\n' "Hermes WebUI source is missing: $ROOT_DIR/hermes-webui" >&2
