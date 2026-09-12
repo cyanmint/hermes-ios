@@ -17,6 +17,18 @@ cd hermes-ios-webui-alpha
 python3 a-shell-check.py
 ```
 
+如果检查显示缺少 `fastapi`、`uvicorn`、`openai`、`pydantic` 或 `python-dotenv`，运行：
+
+```sh
+sh a-shell-install-deps.sh
+```
+
+然后再次运行检查：
+
+```sh
+python3 a-shell-check.py
+```
+
 如果 a-Shell 的 Python 环境已经提供所需依赖，可以直接启动：
 
 ```sh

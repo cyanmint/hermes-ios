@@ -8,9 +8,11 @@ export HERMES_WEBUI_PYTHON="$PYTHON_BIN"
 export HERMES_WEBUI_AGENT_DIR="$ROOT_DIR/hermes-agent"
 export HERMES_HOME=${HERMES_HOME:-"$HOME/.hermes"}
 export HERMES_WEBUI_STATE_DIR=${HERMES_WEBUI_STATE_DIR:-"$HERMES_HOME/webui"}
+export HERMES_WEBUI_DEFAULT_WORKSPACE=${HERMES_WEBUI_DEFAULT_WORKSPACE:-"$ROOT_DIR/workspace"}
 export HERMES_WEBUI_HOST=${HERMES_WEBUI_HOST:-127.0.0.1}
 export HERMES_WEBUI_PORT=${HERMES_WEBUI_PORT:-8787}
 export PYTHONPATH="hermes-webui:hermes-agent${PYTHONPATH:+:$PYTHONPATH}"
+mkdir -p "$HERMES_WEBUI_DEFAULT_WORKSPACE"
 
 if [ ! -f "hermes-webui/server.py" ]; then
   printf '%s\n' "Hermes WebUI source is missing: $ROOT_DIR/hermes-webui" >&2
