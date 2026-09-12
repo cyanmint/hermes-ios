@@ -45,7 +45,7 @@ http://127.0.0.1:8787
 
 ## 使用 Hermes CLI 配置 provider
 
-请使用包内的 a-Shell-safe CLI facade；不要直接执行 `hermes-agent/hermes_cli/main.py`。
+请使用包内 CLI；它只负责设置 a-Shell 运行环境，所有命令、选项和参数都会原样转发给上游 `hermes_cli.main`。
 
 ```sh
 sh a-shell-cli.sh --help
@@ -56,10 +56,21 @@ sh a-shell-cli.sh setup model
 sh a-shell-cli.sh model
 ```
 
+`hermes model` 是上游的交互式模型配置入口。选择 `copilot` provider 时，如果没有现有凭据，上游会启动 GitHub Copilot OAuth device-code 登录：终端会显示 GitHub 验证网址和一次性代码，在 Safari 完成授权后返回 a-Shell，凭据由上游保存到包内 Hermes 状态目录。不要把显示的代码或 token 发给任何人。
+
+也可以直接使用上游的其他命令，例如：
+
+```sh
+sh a-shell-cli.sh auth --help
+sh a-shell-cli.sh config --help
+sh a-shell-cli.sh doctor --help
+sh a-shell-cli.sh gateway --help
+```
+
 API key 仍然是 secret，应写入此包目录的 `.env`，不要写入 `config.yaml`：
 
 ```sh
-printf '%s\n' 'OPENROUTER_API_KEY=your-key' >> .env
+printf '%s\n' 'OPENROUTER_API_KEY=[REDACTED]' >> .env
 ```
 
 也可以在启动 CLI 前临时导出环境变量。`a-shell-cli.sh` 与 WebUI 使用同一个包目录状态，所以配置会立即共享。
@@ -89,7 +100,8 @@ export HERMES_A_SHELL_HOME=./profile
 ## 当前限制
 
 - 启动脚本不会自动运行官方 Hermes 安装器
-- a-Shell CLI 仅保证 provider/config/model/setup 这类配置路径；完整聊天、TUI、OAuth 和 provider 特有原生依赖仍受 a-Shell Python 能力及网络限制影响
+- CLI 参数和子命令会原样转发；具体命令是否可运行取决于 a-Shell 中已安装的依赖和网络能力，缺失可选依赖时上游会返回原始错误
+- `hermes model` 支持通过上游 GitHub Copilot device-code OAuth 流程登录；OAuth 需要 iPad 能访问 GitHub
 - 启动脚本不会创建虚拟环境
 - 不会自动安装依赖
 - Agent 依赖是否能在 a-Shell Python 中导入，需要以 `a-shell-check.py` 的实际结果为准

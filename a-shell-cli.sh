@@ -4,22 +4,21 @@ set -eu
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PYTHON_BIN=${HERMES_WEBUI_PYTHON:-python3}
 
-# Keep the CLI in the same self-contained profile as the WebUI. Override these
-# variables before invoking the script when a different profile is desired.
+# Keep the upstream Hermes CLI's arguments and command dispatch unchanged. The
+# wrapper only supplies the self-contained a-Shell environment.
 unset HERMES_HOME
 export HERMES_HOME=.
-export HERMES_WEBUI_AGENT_DIR=${HERMES_WEBUI_AGENT_DIR:-"$ROOT_DIR/hermes-agent"}
-export PYTHONPATH="$ROOT_DIR/hermes-agent${PYTHONPATH:+:$PYTHONPATH}"
+export HERMES_WEBUI_AGENT_DIR="$ROOT_DIR/hermes-agent"
+export HERMES_WEBUI_ASHELL_MODE=1
+export PYTHONPATH="hermes-agent${PYTHONPATH:+:$PYTHONPATH}"
 
 cd "$ROOT_DIR"
 mkdir -p "$HERMES_HOME"
 
-if [ ! -f "$ROOT_DIR/a-shell-cli.py" ]; then
-  printf '%s\n' "a-Shell CLI source is missing: $ROOT_DIR/a-shell-cli.py" >&2
+if [ ! -f "$ROOT_DIR/hermes-agent/hermes_cli/main.py" ]; then
+  printf '%s\n' "Hermes CLI source is missing: $ROOT_DIR/hermes-agent" >&2
   exit 1
 fi
 
-# The full CLI imports optional Rich/provider modules while constructing every
-# subcommand. The a-Shell-safe facade keeps config/provider setup usable with
-# the standard a-Shell dependency set and shares the same HERMES_HOME.
-exec "$PYTHON_BIN" a-shell-cli.py "$@"
+# Pass every option and subcommand verbatim to the upstream implementation.
+exec "$PYTHON_BIN" -m hermes_cli.main "$@"
