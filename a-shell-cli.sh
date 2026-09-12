@@ -6,7 +6,7 @@ PYTHON_BIN=${HERMES_WEBUI_PYTHON:-python3}
 
 # Keep the CLI in the same self-contained profile as the WebUI. Override these
 # variables before invoking the script when a different profile is desired.
-export HERMES_HOME=${HERMES_HOME:-.}
+export HERMES_HOME=${HERMES_A_SHELL_HOME:-.}
 export HERMES_WEBUI_AGENT_DIR=${HERMES_WEBUI_AGENT_DIR:-"$ROOT_DIR/hermes-agent"}
 export PYTHONPATH="$ROOT_DIR/hermes-agent${PYTHONPATH:+:$PYTHONPATH}"
 

@@ -78,6 +78,12 @@ export HERMES_HOME=.
 export HERMES_WEBUI_PORT=8787
 ```
 
+启动脚本会自动覆盖 a-Shell 继承的不可写 `HERMES_HOME`。如需使用其他可写目录，请设置 `HERMES_A_SHELL_HOME`，不要设置 `HERMES_HOME`：
+
+```sh
+export HERMES_A_SHELL_HOME=./profile
+```
+
 模型/API 配置沿用 Hermes Agent 的配置目录。不要把 API key 写入此压缩包或 Git。
 
 ## 当前限制
