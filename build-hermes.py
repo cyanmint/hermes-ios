@@ -19,6 +19,7 @@ from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parent
 AGENT = ROOT / "hermes-agent"
+WEBUI = ROOT / "hermes-webui"
 BUILD = ROOT / ".build-hermes"
 WHEELS = BUILD / "wheels"
 STAGE = BUILD / "stage"
@@ -30,31 +31,60 @@ EXCLUDED_SOURCE = {
     "pnpm-lock.yaml", "hermes",
 }
 EXCLUDED_NESTED = {".git", "__pycache__", "node_modules"}
+WEBUI_EXCLUDED = {
+    ".git", ".github", "docs", "tests", "scripts", "node_modules", "__pycache__",
+    "package.json", "pyproject.toml", "requirements-dev.txt", "uv.lock", "flake.lock",
+    "Dockerfile", "docker-compose.yml", "docker-compose.two-container.yml",
+    "docker-compose.three-container.yml", "ctl.sh", "bootstrap.py", "mcp_server.py",
+}
 
 ENTRYPOINT = '''
 
 def entrypoint():
-    """Dispatch the single-file archive to the full upstream CLI."""
+    """Dispatch the bundled WebUI or the full upstream CLI."""
     import os
+    import shutil
     import sys
+    import zipfile
     from pathlib import Path
 
-    # a-Shell's $HOME may be read-only. Keep this single-file bundle's state
-    # beside the executable unless the caller explicitly selects another home.
-    bundle_home = os.environ.get("HERMES_BUNDLE_HOME") or str(Path(sys.argv[0]).resolve().parent)
-    os.environ["HERMES_HOME"] = bundle_home
+    os.environ["HOME"] = "."
+    os.environ["HERMES_HOME"] = "./.hermes"
     os.environ.setdefault("HERMES_WEBUI_ASHELL_MODE", "1")
 
-    # a-Shell may expose a read-only HOME. Hermes and its dependencies use
-    # HOME for configuration, so redirect it only when a write probe fails.
-    current_home = Path(os.path.expanduser("~"))
-    try:
-        current_home.mkdir(parents=True, exist_ok=True)
-        probe = current_home / ".hermes-write-probe"
-        probe.write_text("", encoding="utf-8")
-        probe.unlink()
-    except (OSError, PermissionError):
-        os.environ["HOME"] = bundle_home
+    Path("./.hermes").mkdir(parents=True, exist_ok=True)
+
+    if len(sys.argv) > 1 and sys.argv[1] == "webui":
+        archive = Path(sys.argv[0]).resolve()
+        runtime = Path("./.hermes/.webui-runtime")
+        marker = runtime / ".complete"
+        if not marker.is_file():
+            temporary = runtime.with_name(runtime.name + ".tmp")
+            shutil.rmtree(temporary, ignore_errors=True)
+            temporary.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(archive) as source:
+                for prefix in ("_webui_bundle/", "_agent_bundle/"):
+                    for name in source.namelist():
+                        if not name.startswith(prefix) or name.endswith("/"):
+                            continue
+                        base = temporary / "_agent_bundle" if prefix == "_agent_bundle/" else temporary
+                        target = base / name.split("/", 1)[1]
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with source.open(name) as src, target.open("wb") as dst:
+                            shutil.copyfileobj(src, dst)
+            (temporary / ".complete").write_text("ok\\n", encoding="utf-8")
+            shutil.rmtree(runtime, ignore_errors=True)
+            temporary.replace(runtime)
+        webui_root = runtime
+        agent_root = runtime / "_agent_bundle"
+        sys.path.insert(0, str(webui_root))
+        os.environ.setdefault("HERMES_WEBUI_AGENT_DIR", str(agent_root))
+        os.environ["HERMES_WEBUI_STATE_DIR"] = "./.hermes/webui"
+        os.environ["HERMES_WEBUI_DEFAULT_WORKSPACE"] = "./workspace"
+        sys.argv = [sys.argv[0], *sys.argv[2:]]
+        from server import main as webui_main
+        return webui_main()
+
     from hermes_cli.main import main as upstream_main
     return upstream_main()
 '''
@@ -120,6 +150,28 @@ def copy_agent_source() -> None:
     entry.write_text(entry.read_text(encoding="utf-8") + ENTRYPOINT, encoding="utf-8", newline="\n")
 
 
+def copy_webui_source() -> None:
+    """Embed the standard-library WebUI and its static assets for `hermes webui`."""
+    if not WEBUI.is_dir():
+        raise SystemExit(f"missing Hermes WebUI source: {WEBUI}")
+    for container, excluded in (("_webui_bundle", WEBUI_EXCLUDED), ("_agent_bundle", EXCLUDED_SOURCE)):
+        source_root = WEBUI if container == "_webui_bundle" else AGENT
+        destination_root = STAGE / container
+        destination_root.mkdir(parents=True, exist_ok=True)
+        for source in source_root.iterdir():
+            if source.name in excluded:
+                continue
+            destination = destination_root / source.name
+            if source.is_dir():
+                shutil.copytree(
+                    source,
+                    destination,
+                    ignore=lambda _directory, names: [name for name in names if name in EXCLUDED_NESTED],
+                )
+            else:
+                shutil.copy2(source, destination)
+
+
 def embed_pure_dependencies() -> list[str]:
     embedded: list[str] = []
     for wheel in sorted(WHEELS.glob("*.whl")):
@@ -165,6 +217,7 @@ def main() -> None:
         OUTPUT.unlink()
     download_wheels()
     copy_agent_source()
+    copy_webui_source()
     embedded = embed_pure_dependencies()
     zipapp.create_archive(STAGE, OUTPUT, interpreter="python3", main="cli:entrypoint")
     OUTPUT.chmod(0o755)
