@@ -15,7 +15,7 @@ os.environ.setdefault("HERMES_HOME", str(Path.home() / ".hermes"))
 os.environ.setdefault("HERMES_WEBUI_STATE_DIR", str(Path.home() / ".hermes" / "webui"))
 sys.path[:0] = [str(WEBUI), str(AGENT)]
 
-modules = ["yaml", "cryptography", "fastapi", "uvicorn", "httpx", "openai", "pydantic"]
+modules = ["yaml", "cryptography", "httpx"]
 failed = False
 for name in modules:
     try:
@@ -25,6 +25,14 @@ for name in modules:
     except Exception as exc:
         failed = True
         print(f"MISS {name}: {type(exc).__name__}: {exc}")
+
+for name in ["dotenv", "openai", "pydantic"]:
+    try:
+        module = importlib.import_module(name)
+        version = getattr(module, "__version__", "")
+        print(f"OPTIONAL {name} {version}".rstrip())
+    except Exception as exc:
+        print(f"OPTIONAL-MISS {name}: {type(exc).__name__}: {exc}")
 
 try:
     from api.config import _AGENT_DIR

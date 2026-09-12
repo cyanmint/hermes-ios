@@ -17,11 +17,13 @@ cd hermes-ios-webui-alpha
 python3 a-shell-check.py
 ```
 
-如果检查显示缺少 `fastapi`、`uvicorn`、`openai`、`pydantic` 或 `python-dotenv`，运行：
+如果检查显示缺少 `dotenv`，运行：
 
 ```sh
 sh a-shell-install-deps.sh
 ```
+
+FastAPI 和 uvicorn 不需要安装：当前使用的独立 WebUI 采用自带的标准库 HTTP server。不要在 a-Shell 中执行完整 Hermes Agent 的依赖安装，因为其中包含无法在 iOS 上构建的原生扩展。
 
 然后再次运行检查：
 
