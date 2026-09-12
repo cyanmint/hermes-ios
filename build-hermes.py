@@ -27,21 +27,16 @@ OUTPUT = ROOT / "hermes"
 EXCLUDED_SOURCE = {
     ".git", ".github", "apps", "tests", "tests-js", "website", "docs", "evals",
     "node_modules", "native", "nix", "ui-tui", "web", "package-lock.json", "package.json",
-    "pnpm-lock.yaml", "cli.py", "hermes",
+    "pnpm-lock.yaml", "hermes",
 }
 EXCLUDED_NESTED = {".git", "__pycache__", "node_modules"}
 
-ENTRYPOINT = '''#!/usr/bin/env python3
-"""Single-file Hermes Agent entry point."""
+ENTRYPOINT = '''
 
-
-def main():
+def entrypoint():
+    """Dispatch the single-file archive to the full upstream CLI."""
     from hermes_cli.main import main as upstream_main
     return upstream_main()
-
-
-if __name__ == "__main__":
-    main()
 '''
 
 
@@ -101,7 +96,8 @@ def copy_agent_source() -> None:
             )
         else:
             shutil.copy2(source, destination)
-    (STAGE / "cli.py").write_text(ENTRYPOINT, encoding="utf-8", newline="\n")
+    entry = STAGE / "cli.py"
+    entry.write_text(entry.read_text(encoding="utf-8") + ENTRYPOINT, encoding="utf-8", newline="\n")
 
 
 def embed_pure_dependencies() -> list[str]:
@@ -150,8 +146,9 @@ def main() -> None:
     download_wheels()
     copy_agent_source()
     embedded = embed_pure_dependencies()
-    zipapp.create_archive(STAGE, OUTPUT, interpreter="python3", main="cli:main")
+    zipapp.create_archive(STAGE, OUTPUT, interpreter="python3", main="cli:entrypoint")
     OUTPUT.chmod(0o755)
+    shutil.rmtree(BUILD)
     print(f"created {OUTPUT}")
     print(f"embedded pure-Python wheels: {len(embedded)}")
 
