@@ -210,6 +210,9 @@ jobs:
           WASI_SDK_PATH: ${{ env.WASI_SDK_PATH }}
           CARGO_TARGET_WASM32_WASIP1_LINKER: ${{ env.WASI_SDK_PATH }}/bin/clang
           PYO3_PYTHON: ${{ runner.temp }}/cpython/cross-build/build/python
+          PYO3_CROSS: '1'
+          PYO3_CROSS_PYTHON_VERSION: '3.13'
+          PYO3_CROSS_PYTHON_IMPLEMENTATION: CPython
         run: |
           set -euo pipefail
           mkdir -p build/native build/diagnostics
@@ -300,6 +303,7 @@ jobs:
             LDFLAGS="-Wl,--whole-archive $CPYTHON_ROOT/build/native/libpydantic_core.a -Wl,--no-whole-archive"
 
       - name: Assemble runtime artifact
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
