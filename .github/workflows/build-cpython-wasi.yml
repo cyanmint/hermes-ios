@@ -123,7 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/build/wasi"
-          uv export --locked --no-dev --no-editable --format requirements.txt \
+          uv export --locked --no-dev --no-editable --no-hashes --format requirements.txt \
             --output-file "$RUNNER_TEMP/hermes-requirements.txt"
           cp "$RUNNER_TEMP/hermes-requirements.txt" \
             "$GITHUB_WORKSPACE/build/wasi/hermes-requirements.txt"
@@ -186,7 +186,7 @@ jobs:
           }
           output = []
           for raw in Path("build/wasi/hermes-requirements.txt").read_text().splitlines():
-              line = raw.strip()
+              line = raw.strip().rstrip("\\").strip()
               if not line or line.startswith(("#", "-")):
                   continue
               # Platform-specific Linux/Windows selections are not valid WASI
@@ -248,7 +248,11 @@ jobs:
             cargo rustc --release --target "$WASM_TARGET" \
               --crate-type staticlib --features pyo3/extension-module
           )
-          archive=$(find build/native/pydantic-core/target -type f -name 'libpydantic_core.a' -print -quit)
+          find build/native/pydantic-core/target -type f -name '*.a' \
+            -print | tee build/diagnostics/pydantic-core.archives
+          archive=$(find build/native/pydantic-core/target -type f \
+            \( -name 'lib_pydantic_core.a' -o -name 'libpydantic_core.a' \) \
+            -print -quit)
           test -n "$archive"
           "$WASI_SDK_PATH/bin/llvm-nm" -g "$archive" | tee build/diagnostics/pydantic-core.symbols
           grep -q 'PyInit__pydantic_core' build/diagnostics/pydantic-core.symbols
