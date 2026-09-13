@@ -1,83 +1,250 @@
-# Hermes iOS / a-Shell 初步分析
+# WASM Runtime 迁移分析
 
-## 当前来源
+## 结论
 
-本仓库通过 Git submodule 固定了两个上游来源：
+a-Shell 原生 Python + 外部 WebUI 路线已判定不可行，不再作为产品路径。
 
-- `hermes-agent` → `NousResearch/hermes-agent`
-- `hermes-webui` → `nesquena/hermes-webui`
+失败原因不是 WebUI 启动方式，而是 Hermes Agent 的依赖闭包包含 `pydantic-core`。该模块是原生扩展，a-Shell 当前 Python 环境无法提供兼容版本，因此 Agent 无法完成启动。继续裁剪纯 Python 依赖、制作 zipapp 或依赖 a-Shell 预装模块，都不能解决这个硬阻塞。
 
-两者不是同一个 WebUI：Hermes Agent 自身也包含一个 `web/` React/Vite dashboard；外部 `hermes-webui` 是独立的 Python + vanilla JavaScript WebUI。当前工作目标使用外部 `hermes-webui`。
-
-## 当前固定版本
-
-- Hermes Agent: `53c57871d67ee7d2202861aacc4ea0ef6ef93112`
-- Hermes WebUI: `b1286878a437d374d2bfb6db3e3d084e33d3fe5d`
-- 根仓库初始提交: `4e636b4`
-
-两个 submodule 当前均为浅克隆，根仓库记录的是明确的 gitlink 提交。
-
-## WebUI 运行模型
-
-外部 WebUI 不需要 Node、Vite、npm 或前端构建：
+新的产品边界是：
 
 ```text
-Python WebUI server
-├── static/ vanilla JavaScript
-├── API routes
-└── in-process Hermes Agent
+a-Shell Python = launcher + 宿主能力
+WASM Python    = Hermes Agent + Agent 依赖
 ```
 
-`hermes-webui/api/config.py` 支持通过 `HERMES_WEBUI_AGENT_DIR` 指向 Agent 源码目录，并将该目录加入 Python import 路径。WebUI 的 chat 默认在进程内导入 `run_agent.AIAgent`，不是通过 OpenAI-compatible API 连接另一个 Agent。
+## 版本来源
 
-因此 a-Shell 第一阶段应优先运行独立 WebUI 的 Python server，并将：
+根仓库使用两个上游 submodule：
+
+- `hermes-agent` → `https://github.com/NousResearch/hermes-agent.git`
+- `hermes-webui` → `https://github.com/nesquena/hermes-webui.git`
+
+当前固定提交：
+
+- Hermes Agent: `3bef6b6a5c543c587b756e4091a8c3d0d66e1a6b`
+- Hermes WebUI: `e36f77389191fe9d81cd3a7416772e2f7b022e19`
+
+两个 submodule 的旧本地提交属于已经放弃的 a-Shell 原生 Python 适配，不再保留。
+
+## 目标架构
 
 ```text
-HERMES_WEBUI_AGENT_DIR=<本地>/hermes-agent
+Safari / 本地客户端
+        │ HTTP / WebSocket
+        ▼
+a-Shell 原生 Python launcher
+        │
+        ├── 127.0.0.1 listener
+        ├── HTTP/WebSocket gateway
+        ├── network capability
+        ├── filesystem persistence
+        ├── subprocess / PTY capability
+        └── WASM runtime child
+                │ stdin/stdout: framed RPC
+                │ stderr: diagnostics
+                ▼
+        Pyodide 或 WASI CPython
+                │
+                ├── pydantic
+                ├── pydantic-core WASM build
+                ├── Hermes Agent
+                └── 已验证的 WASM-compatible dependencies
 ```
 
-指向 Agent submodule。
+WASM runtime 不监听外部网络端口。launcher 监听本机端口，并将 runtime 请求转化为宿主 capability。不能把普通 native Python 的 socket、subprocess、文件系统和终端语义直接假定为 WASM 中可用。
 
-## 依赖现状
+## Runtime 选择
 
-外部 WebUI 的 `requirements.txt` 只有基础 WebUI 依赖：
+需要在最小探针阶段比较两条路线：
 
-- `pyyaml`
-- `cryptography`
-- `edge-tts` 可选
-- `psutil` 可选
-- Office 文档解析器可选
+### Pyodide
 
-但 WebUI 会直接使用 Hermes Agent 的 Python 依赖。Agent 当前 `pyproject.toml` 的基础依赖仍包含大量与 iOS 无关或可能不兼容的包，并且包含 FastAPI、uvicorn、python-multipart 等 dashboard 依赖。不能只安装 WebUI 的 `requirements.txt` 后就认为 Agent 可运行；需要在 a-Shell Python 环境中逐项进行 import/startup 验证。
+需要确认：
 
-## 第一阶段边界
+- 目标版本是否包含可用的 `pydantic` / `pydantic-core`
+- `pydantic-core` 是否与 Pyodide 的 Emscripten ABI 匹配
+- Hermes Agent 的 import 链是否能在 Pyodide 中完成
+- stdio、文件系统和长时间运行模型请求是否能由 a-Shell launcher 稳定承载
 
-暂不处理：
+### WASI CPython
 
-- `ui-tui`
-- Node.js/WASM
-- Electron/Desktop
-- Hermes Agent 内置 React/Vite WebUI
-- Gateway、MCP、浏览器、语音和媒体扩展
+需要确认：
 
-先验证：
+- CPython-WASM 是否支持目标扩展加载方式
+- `pydantic-core` 是否能构建为目标 WASI ABI
+- 依赖闭包中是否存在只能使用 Emscripten/JavaScript API 的包
+- a-Shell 的 WASM 执行能力是否支持双向 stdio、长时间运行和可靠终止
+
+普通 CPython 的 `pydantic_core` native wheel 不能用于上述任一路线。目标必须是可被对应 WASM runtime 加载的扩展或兼容实现。
+
+## stdio RPC 协议
+
+stdin/stdout 是 runtime 与 launcher 之间唯一的控制通道，不能使用“任意文本行”作为协议边界。建议采用：
 
 ```text
-a-Shell Python
-→ external hermes-webui server
-→ static WebUI via iOS browser
-→ Agent import
-→ 配置加载
-→ 模型请求
-→ 基础对话
-→ 会话保存/恢复
+4-byte big-endian unsigned length
+UTF-8 JSON payload
 ```
 
-## 主要风险
+消息必须带有请求 ID：
 
-1. Hermes Agent 的 `run_agent.py` 及其导入链可能触发 a-Shell 不支持的依赖。
-2. WebUI bootstrap 默认会创建/寻找独立虚拟环境，并可能尝试调用官方安装器；iOS 发行版不应直接使用该自动安装路径。
-3. WebUI 当前会将 Agent 源码加入 `sys.path` 并进行进程内导入，因此 Agent 与 WebUI 必须使用同一个兼容的 Python 解释器和明确的 `HERMES_HOME`。
-4. 外部 WebUI 与 Agent 内置 `web/` 的 API 契约可能不同，不能混用静态资源或启动命令。
+```json
+{
+  "type": "request",
+  "id": 1,
+  "method": "net.request",
+  "params": {
+    "url": "https://example.com",
+    "method": "GET",
+    "headers": {}
+  }
+}
+```
 
-下一步应先编写不安装依赖的静态 import/启动探针，识别 a-Shell 基础 Python 能否加载 `hermes-webui` 和 `run_agent.AIAgent`，然后再建立 iOS 专用依赖清单与启动脚本。
+响应：
+
+```json
+{
+  "type": "response",
+  "id": 1,
+  "ok": true,
+  "result": {
+    "status": 200,
+    "headers": {},
+    "body": "..."
+  }
+}
+```
+
+流式输出使用独立 event 消息。stdout 禁止混入日志、banner 或 traceback；诊断输出写 stderr。
+
+## 宿主能力
+
+### 网络
+
+先实现结构化 HTTP：
+
+- `net.request`
+- `net.stream`
+- 请求超时和取消
+- 最大响应体限制
+- 目标地址限制
+- secret 脱敏
+
+不在第一版实现任意 TCP tunnel。模型 provider 和 WebUI 的实际请求需求优先于通用 socket 兼容性。
+
+### 文件
+
+runtime 使用虚拟文件系统，launcher 只持久化允许的目录：
+
+```text
+/home/hermes
+/workspace
+/tmp
+```
+
+需要区分只读资源、session/profile 持久化目录、workspace 和临时目录。禁止通过 capability 访问任意宿主绝对路径。
+
+优先采用批量 checkpoint/sync，避免每一次 Python 文件操作都跨进程 RPC。
+
+### 子进程
+
+提供受限的 `process.spawn`：
+
+- argv 数组而不是 shell 字符串
+- 明确 cwd
+- 受控环境变量
+- 命令白名单
+- 超时、取消和 kill
+- 独立 stdout/stderr 流
+
+缺少宿主支持时，Hermes 工具必须报告明确的 capability unavailable，而不是伪装成功。
+
+### 终端
+
+RPC stdio 与用户终端严格分离。需要终端时由 launcher 创建 pipe/PTY，并传递：
+
+- `pty.open`
+- `pty.write`
+- `pty.resize`
+- `pty.close`
+- `pty.stdout` / `pty.stderr` events
+
+第一版可以先实现非交互 pipe，待基础 Agent 路径稳定后再处理完整 PTY、prompt_toolkit 和 TUI。
+
+## 迁移阶段
+
+### Stage 0：清理旧路径
+
+- 删除 a-Shell 原生 Python launcher、zipapp builder 和依赖检查器
+- 删除旧的原生 WebUI 启动说明
+- 重置两个 submodule 到远端最新提交
+- 明确 a-Shell Python 不是 Agent runtime
+
+### Stage 1：WASM bootstrap
+
+- 启动目标 WASM Python
+- 建立 framed stdio RPC
+- 验证请求 ID、并发、错误、超时和 runtime 重启
+- 确认 stdout/stderr 隔离
+
+### Stage 2：原生扩展硬门槛
+
+最小测试必须实际执行：
+
+```python
+import pydantic
+from pydantic_core import SchemaValidator
+```
+
+并构造、执行一个真实 schema。仅成功 import `pydantic` 不算通过。
+
+### Stage 3：Agent import
+
+按顺序验证：
+
+```text
+配置加载
+→ Hermes Agent 最小 import
+→ provider client import
+→ session/state
+→ 一次模型请求
+→ 流式输出
+```
+
+每一步都记录缺失模块、需要的 capability 和降级行为。
+
+### Stage 4：WebUI gateway
+
+将 WebUI 的网络入口放在 launcher 或明确的 WASM gateway 适配层中。不能让 WebUI 继续隐式 import 一个运行在 a-Shell 原生 Python 中的 Agent 实例。
+
+### Stage 5：工具能力
+
+按需接入文件、subprocess、PTY、MCP 和其他扩展，并为每项能力添加真实设备测试。
+
+## 验收标准
+
+一个阶段只有在以下条件满足后才能报告完成：
+
+- 在真实目标环境中运行过，而不是只在桌面 Python 中运行
+- `pydantic-core` 在目标 WASM runtime 中实际 import 并执行
+- 大请求、大响应和二进制安全编码不会破坏 RPC framing
+- 并发请求不会串包或错配 response ID
+- runtime 崩溃、launcher 断开和请求超时都有可观察错误
+- session checkpoint 后可以重启恢复
+- 网络请求、文件写入和子进程都遵守 capability 边界
+- 凭据不进入日志、URL、测试快照或发布归档
+
+## 已删除的旧交付物
+
+以下内容属于已放弃的 a-Shell 原生 Python 第一阶段，不再使用：
+
+- `a-shell-check.py`
+- `a-shell-cli.py`
+- `a-shell-cli.sh`
+- `a-shell-install-deps.sh`
+- `a-shell-start.sh`
+- `build-hermes.py`
+- 原生 Python zipapp `hermes`
+- `README-A-SHELL.md`
