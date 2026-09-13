@@ -122,9 +122,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/build/wasi"
           uv export --locked --no-dev --no-editable --format requirements.txt \
             --output-file "$RUNNER_TEMP/hermes-requirements.txt"
-          cp "$RUNNER_TEMP/hermes-requirements.txt" "$GITHUB_WORKSPACE/hermes-requirements.txt"
+          cp "$RUNNER_TEMP/hermes-requirements.txt" \
+            "$GITHUB_WORKSPACE/build/wasi/hermes-requirements.txt"
 
       - name: Inventory native distributions
         shell: bash
@@ -134,7 +136,8 @@ jobs:
           from pathlib import Path
           import re
 
-          req = Path("hermes-requirements.txt").read_text()
+          root = Path("build/wasi")
+          req = (root / "hermes-requirements.txt").read_text()
           names = []
           for line in req.splitlines():
               line = line.strip()
@@ -143,19 +146,61 @@ jobs:
               match = re.match(r"([A-Za-z0-9_.-]+)(?:[<>=!~]|$)", line)
               if match:
                   names.append(match.group(1).lower().replace("-", "_"))
-          # This is intentionally a reviewable allowlist, not a claim that all
-          # packages are WASI-compatible. Unsupported native packages stop the
-          # build in the next step.
-          known = {
-              "pydantic_core", "cryptography", "psutil", "pillow", "cffi",
-              "_cffi_backend", "httptools", "uvloop", "brotlicffi", "pynacl",
-              "orjson", "multidict", "yarl", "frozenlist", "aiohttp",
-              "aiosqlite", "asyncpg", "nemo_relay",
+          # First hard gate: only pydantic-core is built and linked. Other
+          # native packages are deliberately excluded from this test artifact;
+          # their names are preserved for the next porting iteration.
+          native = {
+              "cffi", "cryptography", "psutil", "pillow", "httptools",
+              "uvloop", "nemo_relay", "pydantic_core", "brotlicffi",
+              "pynacl", "orjson", "multidict", "yarl", "frozenlist",
+              "aiohttp", "aiosqlite", "asyncpg",
           }
-          candidates = sorted(set(names) & known)
-          Path("native-distributions.txt").write_text("\n".join(candidates) + "\n")
-          print("Native distributions found in the locked core closure:")
-          print("\n".join(candidates) or "(none)")
+          found = sorted(set(names) & native)
+          required = [name for name in found if name == "pydantic_core"]
+          excluded = [name for name in found if name != "pydantic_core"]
+          (root / "native-distributions.txt").write_text(
+              "\n".join(required) + "\n"
+          )
+          (root / "excluded-native-distributions.txt").write_text(
+              "\n".join(excluded) + "\n"
+          )
+          print("Native distributions retained for the first hard gate:")
+          print("\n".join(required) or "(none)")
+          print("Native distributions excluded from the test artifact:")
+          print("\n".join(excluded) or "(none)")
+          PY
+
+      - name: Prepare trimmed WASI Python dependency set
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          excluded = {
+              "cffi", "cryptography", "psutil", "pillow", "httptools",
+              "uvloop", "nemo_relay", "pydantic_core", "brotlicffi",
+              "pynacl", "orjson", "multidict", "yarl", "frozenlist",
+              "aiohttp", "aiosqlite", "asyncpg",
+          }
+          output = []
+          for raw in Path("build/wasi/hermes-requirements.txt").read_text().splitlines():
+              line = raw.strip()
+              if not line or line.startswith(("#", "-")):
+                  continue
+              # Platform-specific Linux/Windows selections are not valid WASI
+              # requirements. They remain visible in the original export.
+              if "sys_platform" in line or "platform_machine" in line:
+                  continue
+              match = re.match(r"([A-Za-z0-9_.-]+)", line)
+              if match and match.group(1).lower().replace("-", "_") in excluded:
+                  continue
+              output.append(line)
+          Path("build/wasi/wasi-requirements.txt").write_text(
+              "\n".join(output) + "\n"
+          )
+          print(f"Retained {len(output)} pure-Python requirement lines")
           PY
 
       - name: Build and validate static native extension archives
@@ -184,7 +229,7 @@ jobs:
                 exit 1
                 ;;
             esac
-          done < native-distributions.txt
+          done < build/wasi/native-distributions.txt
 
           # pydantic-core is the first mandatory extension. The same builder
           # contract is used for the remaining entries once their WASI ports
@@ -254,7 +299,38 @@ jobs:
           make -C "$CPYTHON_ROOT/cross-build/wasm32-wasip1" -j"$(nproc)" \
             LDFLAGS="-Wl,--whole-archive $CPYTHON_ROOT/build/native/libpydantic_core.a -Wl,--no-whole-archive"
 
-      - name: Run WASI smoke tests
+      - name: Assemble runtime artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist/python/Lib dist/python/site-packages
+          cp "${{ runner.temp }}/cpython/cross-build/wasm32-wasip1/python.wasm" dist/python/
+          cp -R "${{ runner.temp }}/cpython/Lib/"* dist/python/Lib/
+          # Install only the trimmed pure-Python closure. Native packages are
+          # intentionally absent so the artifact exposes the next real import
+          # failures instead of silently embedding host wheels.
+          uv pip install --target dist/python/site-packages --no-deps \
+            -r build/wasi/wasi-requirements.txt
+          cp -R hermes-agent dist/hermes-agent
+          cp -R hermes-webui dist/hermes-webui
+          cp build/wasi/hermes-requirements.txt \
+            build/wasi/wasi-requirements.txt \
+            build/wasi/native-distributions.txt \
+            build/wasi/excluded-native-distributions.txt dist/
+          printf '%s\n' \
+            '{' \
+            '  "target": "wasm32-wasip1",' \
+            "  \"cpython_ref\": \"${CPYTHON_REF}\"," \
+            "  \"hermes_ref\": \"${HERMES_REF}\"," \
+            '  "static_extensions": ["_pydantic_core"],' \
+            '  "native_extensions_excluded": true,' \
+            '  "status": "trimmed-test-artifact"' \
+            '}' > dist/manifest.json
+
+      - name: Run first hard-gate WASI smoke test
+        id: smoke
+        continue-on-error: true
         shell: bash
         env:
           CPYTHON_ROOT: ${{ runner.temp }}/cpython
@@ -262,34 +338,28 @@ jobs:
           set -euo pipefail
           wasm="$CPYTHON_ROOT/cross-build/wasm32-wasip1/python.wasm"
           test -s "$wasm"
-          wasmtime run --dir "$GITHUB_WORKSPACE::/workspace" "$wasm" -c \
+          wasmtime run \
+            --dir "$GITHUB_WORKSPACE/dist::/workspace" \
+            --env PYTHONPATH=/workspace/python/Lib:/workspace/python/site-packages:/workspace/hermes-agent:/workspace/hermes-webui \
+            "$wasm" -c \
             'import sys; import pydantic; import pydantic_core; from pydantic_core import SchemaValidator; print(sys.version); print(SchemaValidator({"type": "str"}).validate_python("hermes"))'
 
-      - name: Assemble runtime artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf dist
-          mkdir -p dist/python/Lib dist/python
-          cp "${{ runner.temp }}/cpython/cross-build/wasm32-wasip1/python.wasm" dist/python/
-          cp -R "${{ runner.temp }}/cpython/Lib/"* dist/python/Lib/
-          cp -R hermes-agent dist/hermes-agent
-          cp hermes-requirements.txt native-distributions.txt dist/
-          printf '%s\n' \
-            '{' \
-            '  "target": "wasm32-wasip1",' \
-            "  \"cpython_ref\": \"${CPYTHON_REF}\"," \
-            "  \"hermes_ref\": \"${HERMES_REF}\"," \
-            '  "static_extensions": ["_pydantic_core"]' \
-            '}' > dist/manifest.json
-
-      - name: Upload WASI runtime and diagnostics
+      - name: Upload trimmed test artifact and diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: hermes-cpython-wasi-${{ github.sha }}
+          name: hermes-cpython-wasi-trimmed-${{ github.sha }}
           path: |
             dist/
             build/diagnostics/
-            native-distributions.txt
+            build/wasi/native-distributions.txt
+            build/wasi/excluded-native-distributions.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Fail if the first hard gate failed
+        if: steps.smoke.outcome == 'failure'
+        shell: bash
+        run: |
+          echo 'The trimmed artifact was uploaded for diagnosis, but the pydantic-core hard gate failed.' >&2
+          exit 1
