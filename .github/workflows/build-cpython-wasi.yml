@@ -380,6 +380,15 @@ jobs:
           mkdir -p dist/python/site-packages/pydantic_core
           cp -R build/native/pydantic-core/python/pydantic_core/. \
             dist/python/site-packages/pydantic_core/
+          python - <<'PY'
+          from pathlib import Path
+          init = Path("dist/python/site-packages/pydantic_core/__init__.py")
+          text = init.read_text()
+          old = "from ._pydantic_core import"
+          if old not in text:
+              raise SystemExit("pydantic-core wrapper import layout changed")
+          init.write_text(text.replace(old, "from _pydantic_core import", 1))
+          PY
           cp -R hermes-agent dist/hermes-agent
           cp -R hermes-webui dist/hermes-webui
           cp build/wasi/hermes-requirements.txt \
