@@ -419,16 +419,30 @@ jobs:
           root=${TMPDIR:-/tmp}/hermes-wasi-$$
           trap 'rm -rf "$root"' EXIT HUP INT TERM
           mkdir -p "$root"
-          marker_line=$(grep -a -n '^__HERMES_PAYLOAD_BELOW__$' "$self")
+          marker_line=$(grep -a -n '^__HERMES_PAYLOAD_BELOW__$' "$self" || true)
           marker=${marker_line%%:*}
-          test -n "$marker"
+          if [ -z "$marker" ]; then
+            printf '%s\n' 'hermes: embedded payload marker not found' >&2
+            exit 70
+          fi
           payload_start=$((marker + 1))
-          if base64 --help 2>&1 | grep -q -- '--decode'; then
-            tail -n +"$payload_start" "$self" | base64 --decode | tar -xzf - -C "$root"
+          if base64 --decode </dev/null >/dev/null 2>&1; then
+            if ! tail -n +"$payload_start" "$self" | base64 --decode | tar -xzf - -C "$root"; then
+              printf '%s\n' 'hermes: failed to decode or extract embedded payload' >&2
+              exit 70
+            fi
           else
-            tail -n +"$payload_start" "$self" | base64 -D | tar -xzf - -C "$root"
+            if ! tail -n +"$payload_start" "$self" | base64 -D | tar -xzf - -C "$root"; then
+              printf '%s\n' 'hermes: failed to decode or extract embedded payload' >&2
+              exit 70
+            fi
           fi
           wasmtime_bin=${HERMES_WASMTIME:-wasmtime}
+          if ! command -v "$wasmtime_bin" >/dev/null 2>&1; then
+            printf 'hermes: wasmtime not found: %s\n' "$wasmtime_bin" >&2
+            printf '%s\n' 'hermes: install wasmtime or set HERMES_WASMTIME' >&2
+            exit 127
+          fi
           exec "$wasmtime_bin" run \
             --dir "$root::/workspace" \
             --env PYTHONPATH=/workspace/python/Lib:/workspace/python/site-packages:/workspace/hermes-agent:/workspace/hermes-webui \
