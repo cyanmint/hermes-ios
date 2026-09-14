@@ -120,3 +120,36 @@ wasmtime run --dir .::/ ./hermes --help
 ```
 
 a-Shell 中将 `hermes` 放入可执行目录后直接运行它；不再经过 tar/base64 解包层。构建 artifact 中的主可执行文件是原始 WASI WebAssembly 文件 `hermes`，诊断日志单独上传。
+
+## a-Shell 远程调试工具
+
+根目录的 `ashell-debug-server.py` 是纯 Python 标准库调试代理，支持：
+
+- 执行 argv 命令并实时转发 stdout/stderr
+- 上传和下载文件
+- 限制工作根目录，拒绝 `..` 越界路径
+- 密码认证
+
+a-Shell 中运行：
+
+```sh
+python3 ashell-debug-server.py \
+  --host 0.0.0.0 \
+  --port 8765 \
+  --root . \
+  --password '仅用于本次调试的密码'
+```
+
+另一台机器上使用 `ashell-debug-client.py`：
+
+```sh
+python3 ashell-debug-client.py --host IPAD_IP --port 8765 \
+  --password '仅用于本次调试的密码' \
+  exec -- python3 -c 'import sys; print(sys.version)'
+
+python3 ashell-debug-client.py --host IPAD_IP --port 8765 \
+  --password '仅用于本次调试的密码' \
+  upload local.txt remote.txt
+```
+
+默认服务端绑定 `127.0.0.1`；监听 LAN 时必须设置密码。协议没有 TLS，密码和调试数据只应在可信网络或 VPN/SSH 隧道中传输，调试结束后用 `Ctrl-C` 停止服务。
