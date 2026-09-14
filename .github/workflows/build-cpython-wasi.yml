@@ -323,19 +323,6 @@ jobs:
           WASI_SDK_PATH: ${{ env.WASI_SDK_PATH }}
         run: |
           set -euo pipefail
-          # The registry is compiled into CPython; no dlopen or runtime .so
-          # loading is used. The archive is kept explicit so the linker cannot
-          # silently drop the PyInit symbol during --gc-sections.
-          cat > "$CPYTHON_ROOT/Modules/hermes_static_extensions.c" <<'EOF'
-          #include <Python.h>
-          PyMODINIT_FUNC PyInit__pydantic_core(void);
-          void hermes_register_static_extensions(void) {
-              if (PyImport_AppendInittab("_pydantic_core", PyInit__pydantic_core) == -1) {
-                  Py_FatalError("failed to register _pydantic_core");
-              }
-          }
-          EOF
-
           python - <<'PY'
           from pathlib import Path
           path = Path("${{ runner.temp }}/cpython/Programs/python.c")
@@ -345,7 +332,8 @@ jobs:
               raise SystemExit("CPython Programs/python.c layout changed; update static registry patch")
           text = text.replace(
               marker,
-              "extern void hermes_register_static_extensions(void);\n\n" + marker,
+              "#include <Python.h>\n\n"
+              "PyMODINIT_FUNC PyInit__pydantic_core(void);\n\n" + marker,
               1,
           )
           # Python 3.13's minimal Programs/python.c delegates initialization
@@ -353,16 +341,19 @@ jobs:
           needle = "    return Py_BytesMain(argc, argv);\n"
           if needle not in text:
               raise SystemExit("CPython initialization marker changed; update static registry patch")
-          text = text.replace(needle, "    hermes_register_static_extensions();\n" + needle, 1)
+          registration = (
+              "    if (PyImport_AppendInittab(\"_pydantic_core\", "
+              "PyInit__pydantic_core) == -1) {\n"
+              "        Py_FatalError(\"failed to register _pydantic_core\");\n"
+              "    }\n"
+          )
+          text = text.replace(needle, registration + needle, 1)
           path.write_text(text)
           PY
 
           mkdir -p "$CPYTHON_ROOT/build/native"
           cp "$GITHUB_WORKSPACE/build/native/libpydantic_core.a" \
             "$CPYTHON_ROOT/build/native/libpydantic_core.a"
-          printf '\n# Hermes static extension registry\n' >> "$CPYTHON_ROOT/Modules/Setup.local"
-          printf 'hermes_static_extensions Modules/hermes_static_extensions.c\n' \
-            >> "$CPYTHON_ROOT/Modules/Setup.local"
           # Re-run the target link after the registry source and archive exist.
           make -C "$CPYTHON_ROOT/cross-build/wasm32-wasip1" -j"$(nproc)" \
             LDFLAGS="-Wl,--whole-archive $CPYTHON_ROOT/build/native/libpydantic_core.a -Wl,--no-whole-archive"
