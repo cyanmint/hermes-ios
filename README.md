@@ -105,18 +105,18 @@ launcher 在 a-Shell 侧管理 pipe 或 PTY。runtime 的 RPC stdio 与交互终
 
 详细设计和迁移顺序见 [`ANALYSIS.md`](ANALYSIS.md)。
 
-## 单文件交付物
+## WASI 命令交付物
 
-GitHub Actions 成功构建后会生成一个单文件交付物：
+GitHub Actions 成功构建后会生成直接的 WASI 命令：
 
 ```text
 ./hermes
 ```
 
-它是自解包 launcher，内部包含 `python.wasm`、CPython 标准库、WASI 依赖、`pydantic-core` 和 Hermes Agent/WebUI 源码。运行时需要宿主提供 `wasmtime`，也可以通过 `HERMES_WASMTIME` 指定其路径：
+它不是 shell/Python loader，而是直接链接了 `_pydantic_core` builtin 和 Hermes 启动入口的 WASI WebAssembly 程序（文件名没有伪装成 shell 脚本）。CPython 标准库、WASI 依赖以及 Hermes Agent/WebUI 源码放在同一 artifact 的伴随目录中，由 a-Shell 的 WASI 命令执行器提供当前目录作为文件系统。
 
 ```sh
-HERMES_WASMTIME=/path/to/wasmtime ./hermes --help
+wasmtime run --dir .::/ ./hermes --help
 ```
 
-launcher 会将内嵌 payload 解包到临时目录，使用 WASI CPython 启动 `hermes_cli.main`，退出时自动清理临时文件。构建 artifact 中的可下载交付物只有 `hermes`；诊断日志单独上传。
+a-Shell 中将 `hermes` 放入可执行目录后直接运行它；不再经过 tar/base64 解包层。构建 artifact 中的主可执行文件是原始 WASI WebAssembly 文件 `hermes`，诊断日志单独上传。

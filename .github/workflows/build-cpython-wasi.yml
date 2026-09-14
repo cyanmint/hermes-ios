@@ -332,7 +332,8 @@ jobs:
               raise SystemExit("CPython Programs/python.c layout changed; update static registry patch")
           text = text.replace(
               marker,
-              "#include <Python.h>\n\n"
+              "#include <Python.h>\n"
+              "#include <stdlib.h>\n\n"
               "PyMODINIT_FUNC PyInit__pydantic_core(void);\n\n" + marker,
               1,
           )
@@ -342,12 +343,25 @@ jobs:
           if needle not in text:
               raise SystemExit("CPython initialization marker changed; update static registry patch")
           registration = (
+              "    setenv(\"PYTHONPATH\", "
+              "\"/python/Lib:/python/site-packages:/hermes-agent:/hermes-webui\", 1);\n"
               "    if (PyImport_AppendInittab(\"_pydantic_core\", "
               "PyInit__pydantic_core) == -1) {\n"
               "        Py_FatalError(\"failed to register _pydantic_core\");\n"
               "    }\n"
+              "    char **hermes_argv = calloc((size_t)argc + 2, sizeof(char *));\n"
+              "    if (hermes_argv == NULL) {\n"
+              "        Py_FatalError(\"failed to allocate Hermes argv\");\n"
+              "    }\n"
+              "    hermes_argv[0] = argv[0];\n"
+              "    hermes_argv[1] = \"-m\";\n"
+              "    hermes_argv[2] = \"hermes_cli.main\";\n"
+              "    for (int i = 1; i < argc; ++i) {\n"
+              "        hermes_argv[i + 2] = argv[i];\n"
+              "    }\n"
           )
-          text = text.replace(needle, registration + needle, 1)
+          replacement = registration + "    return Py_BytesMain(argc + 2, hermes_argv);\n"
+          text = text.replace(needle, replacement, 1)
           path.write_text(text)
           PY
 
@@ -405,56 +419,13 @@ jobs:
             '  "status": "trimmed-test-artifact"' \
             '}' > dist/manifest.json
 
-          # Produce one self-extracting launcher. The payload contains only
-          # target WASI files; the host contributes the wasmtime executable.
-          payload="$RUNNER_TEMP/hermes-payload.tar.gz"
-          tar -C dist -czf "$payload" \
-            python hermes-agent hermes-webui manifest.json \
-            hermes-requirements.txt wasi-requirements.txt \
-            native-distributions.txt excluded-native-distributions.txt
-          cat > dist/hermes <<'SH'
-          #!/bin/sh
-          set -eu
-          self=$0
-          root=${TMPDIR:-/tmp}/hermes-wasi-$$
-          trap 'rm -rf "$root"' EXIT HUP INT TERM
-          mkdir -p "$root"
-          marker_line=$(grep -a -n '^__HERMES_PAYLOAD_BELOW__$' "$self" || true)
-          marker=${marker_line%%:*}
-          if [ -z "$marker" ]; then
-            printf '%s\n' 'hermes: embedded payload marker not found' >&2
-            exit 70
-          fi
-          payload_start=$((marker + 1))
-          if base64 --decode </dev/null >/dev/null 2>&1; then
-            if ! tail -n +"$payload_start" "$self" | base64 --decode | tar -xzf - -C "$root"; then
-              printf '%s\n' 'hermes: failed to decode or extract embedded payload' >&2
-              exit 70
-            fi
-          else
-            if ! tail -n +"$payload_start" "$self" | base64 -D | tar -xzf - -C "$root"; then
-              printf '%s\n' 'hermes: failed to decode or extract embedded payload' >&2
-              exit 70
-            fi
-          fi
-          wasmtime_bin=${HERMES_WASMTIME:-wasmtime}
-          if ! command -v "$wasmtime_bin" >/dev/null 2>&1; then
-            printf 'hermes: wasmtime not found: %s\n' "$wasmtime_bin" >&2
-            printf '%s\n' 'hermes: install wasmtime or set HERMES_WASMTIME' >&2
-            exit 127
-          fi
-          exec "$wasmtime_bin" run \
-            --dir "$root::/workspace" \
-            --env PYTHONPATH=/workspace/python/Lib:/workspace/python/site-packages:/workspace/hermes-agent:/workspace/hermes-webui \
-            "$root/python/python.wasm" -m hermes_cli.main "$@"
-          __HERMES_PAYLOAD_BELOW__
-          SH
+          # The command itself is the WASI binary, matching a-Shell-commands.
+          # Supporting Python files remain beside it because CPython imports
+          # them through the embedded /python and /hermes-* search paths.
+          cp dist/python/python.wasm dist/hermes
           chmod +x dist/hermes
-          base64 -w 0 "$payload" >> dist/hermes
-          printf '\n' >> dist/hermes
+          file dist/hermes | tee build/diagnostics/hermes-wasm.file
           test -s dist/hermes
-          test "$(grep -c '^__HERMES_PAYLOAD_BELOW__$' dist/hermes)" = 1
-          tar -tzf "$payload" > build/diagnostics/hermes-payload.list
 
       - name: Run first hard-gate WASI smoke test
         id: smoke
@@ -478,8 +449,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -x dist/hermes
-          ./dist/hermes --version \
+          test -s dist/hermes
+          wasmtime run \
+            --dir "$GITHUB_WORKSPACE/dist::/" \
+            dist/hermes --version \
             > build/diagnostics/hermes-launcher.stdout \
             2> build/diagnostics/hermes-launcher.stderr
 
@@ -490,6 +463,11 @@ jobs:
           name: hermes-cpython-wasi-trimmed-${{ github.sha }}
           path: |
             dist/hermes
+            dist/python/
+            dist/hermes-agent/
+            dist/hermes-webui/
+            dist/*.txt
+            dist/manifest.json
           if-no-files-found: error
           retention-days: 14
 
