@@ -359,6 +359,7 @@ jobs:
               "    }\n"
               "    PyConfig config;\n"
               "    PyConfig_InitPythonConfig(&config);\n"
+              "    PyConfig_SetString(&config, &config.home, L\"/usr/local\");\n"
               "    config.module_search_paths_set = 1;\n"
               "    PyWideStringList_Append(&config.module_search_paths, L\"/python/Lib\");\n"
               "    PyWideStringList_Append(&config.module_search_paths, L\"/python/site-packages\");\n"
@@ -393,11 +394,11 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf dist
-          mkdir -p dist/python/Lib dist/python/site-packages dist/lib
+          mkdir -p dist/python/Lib dist/python/site-packages dist/usr/local/lib
           cp "${{ runner.temp }}/cpython/cross-build/wasm32-wasip1/python.wasm" dist/python/
           cp -R "${{ runner.temp }}/cpython/Lib/"* dist/python/Lib/
           # CPython must find encodings before PYTHONPATH is processed.
-          cp -R dist/python/Lib dist/lib/python3.13
+          cp -R dist/python/Lib dist/usr/local/lib/python3.13
           # Install only the trimmed pure-Python closure. Native packages are
           # intentionally absent so the artifact exposes the next real import
           # failures instead of silently embedding host wheels.
@@ -485,7 +486,7 @@ jobs:
           name: hermes-cpython-wasi-trimmed-${{ github.sha }}
           path: |
             dist/hermes
-            dist/lib/
+            dist/usr/
             dist/python/
             dist/hermes-agent/
             dist/hermes-webui/
