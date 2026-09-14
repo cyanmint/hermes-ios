@@ -76,7 +76,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/cpython
-          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v1
+          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v2-no-socket
 
       - name: Restore WASI SDK cache
         id: wasi-cache
@@ -151,6 +151,10 @@ jobs:
           WASI_SDK_PATH: ${{ env.WASI_SDK_PATH }}
         run: |
           set -euo pipefail
+          # a-Shell's WASI host does not implement the preview1 socket
+          # imports.  Do not let CPython auto-build _socket: importing it
+          # would make the entire module fail during WASM instantiation.
+          printf '%s\n' '*disabled*' '_socket' > Modules/Setup.local
           # wasi.py performs the required two-stage build: a native build
           # Python followed by the wasm32-wasip1 host interpreter.
           python Tools/wasm/wasi.py build --quiet -- \
@@ -161,7 +165,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/cpython
-          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v1
+          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v2-no-socket
 
       - name: Export the locked Hermes dependency closure
         working-directory: hermes-agent
@@ -441,7 +445,6 @@ jobs:
           # Supporting Python files remain beside it because CPython imports
           # them through the embedded /python and /hermes-* search paths.
           cp dist/python/python.wasm dist/hermes
-          chmod +x dist/hermes
           file dist/hermes | tee build/diagnostics/hermes-wasm.file
           test -s dist/hermes
 
@@ -486,12 +489,6 @@ jobs:
           name: hermes-cpython-wasi-trimmed-${{ github.sha }}
           path: |
             dist/hermes
-            dist/usr/
-            dist/python/
-            dist/hermes-agent/
-            dist/hermes-webui/
-            dist/*.txt
-            dist/manifest.json
           if-no-files-found: error
           retention-days: 14
 
