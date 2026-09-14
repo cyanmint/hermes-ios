@@ -343,8 +343,7 @@ jobs:
           if needle not in text:
               raise SystemExit("CPython initialization marker changed; update static registry patch")
           registration = (
-              "    setenv(\"PYTHONPATH\", "
-              "\"/python/Lib:/python/site-packages:/hermes-agent:/hermes-webui\", 1);\n"
+              "    Py_SetPath(L\"/python/Lib:/python/site-packages:/hermes-agent:/hermes-webui\");\n"
               "    if (PyImport_AppendInittab(\"_pydantic_core\", "
               "PyInit__pydantic_core) == -1) {\n"
               "        Py_FatalError(\"failed to register _pydantic_core\");\n"
