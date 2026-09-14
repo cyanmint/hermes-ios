@@ -104,3 +104,19 @@ launcher 在 a-Shell 侧管理 pipe 或 PTY。runtime 的 RPC stdio 与交互终
 - 每个阶段都必须有真实 a-Shell 验证，桌面 Python 测试不能替代设备验证
 
 详细设计和迁移顺序见 [`ANALYSIS.md`](ANALYSIS.md)。
+
+## 单文件交付物
+
+GitHub Actions 成功构建后会生成一个单文件交付物：
+
+```text
+./hermes
+```
+
+它是自解包 launcher，内部包含 `python.wasm`、CPython 标准库、WASI 依赖、`pydantic-core` 和 Hermes Agent/WebUI 源码。运行时需要宿主提供 `wasmtime`，也可以通过 `HERMES_WASMTIME` 指定其路径：
+
+```sh
+HERMES_WASMTIME=/path/to/wasmtime ./hermes --help
+```
+
+launcher 会将内嵌 payload 解包到临时目录，使用 WASI CPython 启动 `hermes_cli.main`，退出时自动清理临时文件。构建 artifact 中的可下载交付物只有 `hermes`；诊断日志单独上传。

@@ -405,6 +405,42 @@ jobs:
             '  "status": "trimmed-test-artifact"' \
             '}' > dist/manifest.json
 
+          # Produce one self-extracting launcher. The payload contains only
+          # target WASI files; the host contributes the wasmtime executable.
+          payload="$RUNNER_TEMP/hermes-payload.tar.gz"
+          tar -C dist -czf "$payload" \
+            python hermes-agent hermes-webui manifest.json \
+            hermes-requirements.txt wasi-requirements.txt \
+            native-distributions.txt excluded-native-distributions.txt
+          cat > dist/hermes <<'SH'
+          #!/bin/sh
+          set -eu
+          self=$0
+          root=${TMPDIR:-/tmp}/hermes-wasi-$$
+          trap 'rm -rf "$root"' EXIT HUP INT TERM
+          mkdir -p "$root"
+          marker=$(grep -an '^__HERMES_PAYLOAD_BELOW__$' "$self" | cut -d: -f1)
+          test -n "$marker"
+          payload_start=$((marker + 1))
+          if base64 --help 2>&1 | grep -q -- '--decode'; then
+            tail -n +"$payload_start" "$self" | base64 --decode | tar -xzf - -C "$root"
+          else
+            tail -n +"$payload_start" "$self" | base64 -D | tar -xzf - -C "$root"
+          fi
+          wasmtime_bin=${HERMES_WASMTIME:-wasmtime}
+          exec "$wasmtime_bin" run \
+            --dir "$root::/workspace" \
+            --env PYTHONPATH=/workspace/python/Lib:/workspace/python/site-packages:/workspace/hermes-agent:/workspace/hermes-webui \
+            "$root/python/python.wasm" -m hermes_cli.main "$@"
+          __HERMES_PAYLOAD_BELOW__
+          SH
+          chmod +x dist/hermes
+          base64 -w 0 "$payload" >> dist/hermes
+          printf '\n' >> dist/hermes
+          test -s dist/hermes
+          test "$(grep -c '^__HERMES_PAYLOAD_BELOW__$' dist/hermes)" = 1
+          tar -tzf "$payload" > build/diagnostics/hermes-payload.list
+
       - name: Run first hard-gate WASI smoke test
         id: smoke
         continue-on-error: true
@@ -427,7 +463,16 @@ jobs:
         with:
           name: hermes-cpython-wasi-trimmed-${{ github.sha }}
           path: |
-            dist/
+            dist/hermes
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-cpython-wasi-diagnostics-${{ github.sha }}
+          path: |
             build/diagnostics/
             build/wasi/native-distributions.txt
             build/wasi/excluded-native-distributions.txt
