@@ -457,6 +457,17 @@ jobs:
             "$wasm" -c \
             'import sys; import pydantic; import pydantic_core; from pydantic_core import SchemaValidator; print(sys.version); print(SchemaValidator({"type": "str"}).validate_python("hermes"))'
 
+      - name: Run single-file hermes launcher smoke test
+        id: single-file-smoke
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x dist/hermes
+          ./dist/hermes --version \
+            > build/diagnostics/hermes-launcher.stdout \
+            2> build/diagnostics/hermes-launcher.stderr
+
       - name: Upload trimmed test artifact and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -480,8 +491,8 @@ jobs:
           retention-days: 14
 
       - name: Fail if the first hard gate failed
-        if: steps.smoke.outcome == 'failure'
+        if: steps.smoke.outcome == 'failure' || steps.single-file-smoke.outcome == 'failure'
         shell: bash
         run: |
-          echo 'The trimmed artifact was uploaded for diagnosis, but the pydantic-core hard gate failed.' >&2
+          echo 'The single-file WASI artifact was uploaded for diagnosis, but a hard gate failed.' >&2
           exit 1
