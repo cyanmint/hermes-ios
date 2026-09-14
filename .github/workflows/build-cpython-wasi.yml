@@ -154,7 +154,7 @@ jobs:
           # a-Shell's WASI host does not implement the preview1 socket
           # imports.  Do not let CPython auto-build _socket: importing it
           # would make the entire module fail during WASM instantiation.
-          printf '%s\n' '*disabled*' '_socket' > Modules/Setup.local
+          printf '%s\n' '*disabled*' '_socket socketmodule.c' > Modules/Setup.local
           # wasi.py performs the required two-stage build: a native build
           # Python followed by the wasm32-wasip1 host interpreter.
           python Tools/wasm/wasi.py build --quiet -- \
@@ -458,8 +458,53 @@ jobs:
           data = Path("dist/hermes").read_bytes()
           if data[:4] != b"\x00asm":
               raise SystemExit("dist/hermes is not a WASM binary")
-          if b"sock_accept" in data or b"sock_recv" in data or b"sock_send" in data:
-              raise SystemExit("unsupported WASI socket import found in dist/hermes")
+
+          def u32(pos):
+              value = 0
+              shift = 0
+              while True:
+                  byte = data[pos]
+                  pos += 1
+                  value |= (byte & 0x7f) << shift
+                  if byte < 0x80:
+                      return value, pos
+                  shift += 7
+
+          def name(pos):
+              length, pos = u32(pos)
+              end = pos + length
+              return data[pos:end].decode("utf-8"), end
+
+          pos = 8
+          socket_imports = []
+          while pos < len(data):
+              section, pos = u32(pos)
+              size, pos = u32(pos)
+              end = pos + size
+              if section == 2:
+                  count, cur = u32(pos)
+                  for _ in range(count):
+                      module, cur = name(cur)
+                      field, cur = name(cur)
+                      kind = data[cur]
+                      cur += 1
+                      if kind == 0:
+                          _, cur = u32(cur)
+                      elif kind == 1:
+                          cur += 4
+                      elif kind == 2:
+                          flags, cur = u32(cur)
+                          _, cur = u32(cur)
+                          if flags & 1:
+                              _, cur = u32(cur)
+                      elif kind == 3:
+                          cur += 2
+                      if module == "wasi_snapshot_preview1" and field.startswith("sock_"):
+                          socket_imports.append(f"{module}:{field}")
+                  break
+              pos = end
+          if socket_imports:
+              raise SystemExit("unsupported WASI socket imports: " + ", ".join(socket_imports))
           print("WASI socket import gate OK")
           PY
 
