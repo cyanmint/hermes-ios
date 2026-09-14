@@ -343,7 +343,9 @@ jobs:
           if needle not in text:
               raise SystemExit("CPython initialization marker changed; update static registry patch")
           registration = (
-              "    Py_SetPath(L\"/python/Lib:/python/site-packages:/hermes-agent:/hermes-webui\");\n"
+              "    setenv(\"PYTHONHOME\", \"/\", 1);\n"
+              "    setenv(\"PYTHONPATH\", "
+              "\"/python/Lib:/python/site-packages:/hermes-agent:/hermes-webui\", 1);\n"
               "    if (PyImport_AppendInittab(\"_pydantic_core\", "
               "PyInit__pydantic_core) == -1) {\n"
               "        Py_FatalError(\"failed to register _pydantic_core\");\n"
@@ -377,9 +379,11 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf dist
-          mkdir -p dist/python/Lib dist/python/site-packages
+          mkdir -p dist/python/Lib dist/python/site-packages dist/lib
           cp "${{ runner.temp }}/cpython/cross-build/wasm32-wasip1/python.wasm" dist/python/
           cp -R "${{ runner.temp }}/cpython/Lib/"* dist/python/Lib/
+          # CPython must find encodings before PYTHONPATH is processed.
+          cp -R dist/python/Lib dist/lib/python3.13
           # Install only the trimmed pure-Python closure. Native packages are
           # intentionally absent so the artifact exposes the next real import
           # failures instead of silently embedding host wheels.
@@ -449,6 +453,11 @@ jobs:
         run: |
           set -euo pipefail
           test -s dist/hermes
+          python - <<'PY'
+          from pathlib import Path
+          assert Path('dist/hermes').read_bytes()[:4] == b'\x00asm'
+          print('direct WASI artifact magic OK')
+          PY
           wasmtime run \
             --dir "$GITHUB_WORKSPACE/dist::/" \
             dist/hermes --version \
@@ -462,6 +471,7 @@ jobs:
           name: hermes-cpython-wasi-trimmed-${{ github.sha }}
           path: |
             dist/hermes
+            dist/lib/
             dist/python/
             dist/hermes-agent/
             dist/hermes-webui/
