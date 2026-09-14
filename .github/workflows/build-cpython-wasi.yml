@@ -76,7 +76,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/cpython
-          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v4-no-socket
+          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v6-loader-facades
 
       - name: Restore WASI SDK cache
         id: wasi-cache
@@ -154,18 +154,22 @@ jobs:
           # a-Shell's WASI host does not implement the preview1 socket
           # imports.  Do not let CPython auto-build _socket: importing it
           # would make the entire module fail during WASM instantiation.
-          printf '%s\n' '*disabled*' '_socket socketmodule.c' > Modules/Setup.local
+          # Host networking is deliberately implemented by the a-Shell loader;
+          # these pure-Python facades are copied into the final runtime below.
+          printf '%s\n' '*disabled*' '_socket socketmodule.c' '_ssl _ssl.c' > Modules/Setup.local
           # wasi.py performs the required two-stage build: a native build
           # Python followed by the wasm32-wasip1 host interpreter.
           python Tools/wasm/wasi.py build --quiet -- \
-            --config-cache --without-ensurepip
+            --config-cache --without-ensurepip \
+            py_cv_module__socket=n/a \
+            py_cv_module__ssl=n/a
 
       - name: Save CPython WASI build cache
         if: steps.cpython-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/cpython
-          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v4-no-socket
+          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v6-loader-facades
 
       - name: Export the locked Hermes dependency closure
         working-directory: hermes-agent
@@ -406,6 +410,10 @@ jobs:
           mkdir -p dist/python/Lib dist/python/site-packages dist/usr/local/lib
           cp "${{ runner.temp }}/cpython/cross-build/wasm32-wasip1/python.wasm" dist/python/
           cp -R "${{ runner.temp }}/cpython/Lib/"* dist/python/Lib/
+          # The embedded PyConfig search path starts at /python/Lib, so the
+          # stdio facade must live there to be loaded before hermes_cli.
+          cp sitecustomize.py wasi_loader.py dist/python/Lib/
+          cp wasi_runtime/_socket.py wasi_runtime/_ssl.py dist/python/Lib/
           # CPython must find encodings before PYTHONPATH is processed.
           cp -R dist/python/Lib dist/usr/local/lib/python3.13
           # Install only the trimmed pure-Python closure. Native packages are
@@ -432,6 +440,11 @@ jobs:
           PY
           cp -R hermes-agent dist/hermes-agent
           cp -R hermes-webui dist/hermes-webui
+          cp loader.py wasi_loader.py sitecustomize.py dist/
+          cp wasi_runtime/_socket.py wasi_runtime/_ssl.py dist/
+          test -s dist/loader.py
+          test -s dist/_socket.py
+          test -s dist/_ssl.py
           cp build/wasi/hermes-requirements.txt \
             build/wasi/wasi-requirements.txt \
             build/wasi/native-distributions.txt \
@@ -442,8 +455,10 @@ jobs:
             "  \"cpython_ref\": \"${CPYTHON_REF}\"," \
             "  \"hermes_ref\": \"${HERMES_REF}\"," \
             '  "static_extensions": ["_pydantic_core"],' \
+            '  "loader_required": true,' \
+            '  "forwarded_capabilities": ["io.write", "socket", "ssl"],' \
             '  "native_extensions_excluded": true,' \
-            '  "status": "trimmed-test-artifact"' \
+            '  "status": "loader-mediated-test-artifact"' \
             '}' > dist/manifest.json
 
           # The command itself is the WASI binary, matching a-Shell-commands.
@@ -508,21 +523,25 @@ jobs:
           print("WASI socket import gate OK")
           PY
 
-      - name: Run first hard-gate WASI smoke test
+      - name: Run loader-mediated WASI smoke test
         id: smoke
         continue-on-error: true
         shell: bash
         env:
           CPYTHON_ROOT: ${{ runner.temp }}/cpython
+          HERMES_WASI_SMOKE: '1'
         run: |
           set -euo pipefail
           test -s dist/hermes
-          wasmtime run \
-            --dir "$GITHUB_WORKSPACE/dist::/" \
-            --env HERMES_WASI_SMOKE=1 \
-            "$GITHUB_WORKSPACE/dist/hermes"
+          python loader.py --wasm-command wasmtime dist/hermes
 
-      - name: Run single-file hermes launcher smoke test
+      - name: Test host capability broker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest -v tests.test_wasi_capability_broker
+
+      - name: Verify loader is the only supported execution path
         id: single-file-smoke
         continue-on-error: true
         shell: bash
@@ -534,9 +553,7 @@ jobs:
           assert Path('dist/hermes').read_bytes()[:4] == b'\x00asm'
           print('direct WASI artifact magic OK')
           PY
-          wasmtime run \
-            --dir "$GITHUB_WORKSPACE/dist::/" \
-            dist/hermes --version \
+          python loader.py --wasm-command wasmtime dist/hermes --version \
             > build/diagnostics/hermes-launcher.stdout \
             2> build/diagnostics/hermes-launcher.stderr
 
@@ -551,6 +568,11 @@ jobs:
             dist/python/
             dist/hermes-agent/
             dist/hermes-webui/
+            dist/loader.py
+            dist/wasi_loader.py
+            dist/_socket.py
+            dist/_ssl.py
+            dist/sitecustomize.py
             dist/*.txt
             dist/manifest.json
           if-no-files-found: error

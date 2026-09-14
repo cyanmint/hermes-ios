@@ -110,16 +110,28 @@ launcher 在 a-Shell 侧管理 pipe 或 PTY。runtime 的 RPC stdio 与交互终
 GitHub Actions 成功构建后会生成直接的 WASI 命令：
 
 ```text
-./hermes
+./loader.py hermes
 ```
 
-它不是 shell/Python loader，而是直接链接了 `_pydantic_core` builtin 和 Hermes 启动入口的 WASI WebAssembly 程序（文件名没有伪装成 shell 脚本）。CPython 标准库、WASI 依赖以及 Hermes Agent/WebUI 源码放在同一 artifact 的伴随目录中，由 a-Shell 的 WASI 命令执行器提供当前目录作为文件系统。
+WASM 不是可直接执行的用户入口，必须由同一 artifact 中的 `loader.py` 启动。loader 为 WASM 提供唯一的 framed stdin/stdout 通道，并把应用输出分类转发到 a-Shell 的 stdout/stderr；`_socket` 和 `_ssl` 是 WASI 侧的纯 Python facade，实际 DNS、TCP 和 TLS 操作均由 loader 在 a-Shell 原生 Python 中执行。
 
 ```sh
-wasmtime run --dir .::/ ./hermes --help
+python3 loader.py --wasm-command wasm hermes --help
 ```
 
-a-Shell 中将 `hermes` 放入可执行目录后直接运行它；不再经过 tar/base64 解包层。构建 artifact 中的主可执行文件是原始 WASI WebAssembly 文件 `hermes`，诊断日志单独上传。
+a-Shell 中必须运行 loader，而不是直接运行 `hermes`。loader 退出时会关闭所有代理 socket；协议 stdout 只承载 framed RPC，用户可见输出由 `io.write` event 还原到 stdio。
+
+## WASI capability broker
+
+WASI CPython 不直接拥有网络 socket、TLS、任意宿主路径或任意子进程能力。根目录的 `wasi_capability_broker.py` 提供方案 1 的第一阶段宿主 broker：使用 4 字节大端长度前缀的 JSON RPC，并实现受限的 `net.request` capability。请求和响应均包含 `type` 与 `id`；诊断只写入 stderr，不污染 RPC stdout。
+
+当前 loader 已实现请求体、响应体、超时、URL scheme、URL 凭据、重复 request id 和最大 frame 限制，并提供 `socket.*`/`ssl` 转发。它同时负责将 `io.write`、网络响应和诊断信息分类到 a-Shell 的 stdout、stderr 或原生 socket；WASM 本身不导入 WASI preview1 socket API。
+
+本地协议单元测试：
+
+```sh
+python3 -m unittest -v tests.test_wasi_capability_broker
+```
 
 ## a-Shell 远程调试工具
 
