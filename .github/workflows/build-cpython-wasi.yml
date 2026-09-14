@@ -356,8 +356,13 @@ jobs:
               "        Py_FatalError(\"failed to allocate Hermes argv\");\n"
               "    }\n"
               "    hermes_argv[0] = argv[0];\n"
-              "    hermes_argv[1] = \"-m\";\n"
-              "    hermes_argv[2] = \"hermes_cli.main\";\n"
+              "    if (getenv(\"HERMES_WASI_SMOKE\") != NULL) {\n"
+              "        hermes_argv[1] = \"-c\";\n"
+              "        hermes_argv[2] = \"import pydantic; import pydantic_core; from pydantic_core import SchemaValidator; print(SchemaValidator({'type': 'str'}).validate_python('hermes'))\";\n"
+              "    } else {\n"
+              "        hermes_argv[1] = \"-m\";\n"
+              "        hermes_argv[2] = \"hermes_cli.main\";\n"
+              "    }\n"
               "    for (int i = 1; i < argc; ++i) {\n"
               "        hermes_argv[i + 2] = argv[i];\n"
               "    }\n"
@@ -456,13 +461,11 @@ jobs:
           CPYTHON_ROOT: ${{ runner.temp }}/cpython
         run: |
           set -euo pipefail
-          wasm="$CPYTHON_ROOT/cross-build/wasm32-wasip1/python.wasm"
-          test -s "$wasm"
+          test -s dist/hermes
           wasmtime run \
             --dir "$GITHUB_WORKSPACE/dist::/workspace" \
-            --env PYTHONPATH=/workspace/python/Lib:/workspace/python/site-packages:/workspace/hermes-agent:/workspace/hermes-webui \
-            "$wasm" -c \
-            'import sys; import pydantic; import pydantic_core; from pydantic_core import SchemaValidator; print(sys.version); print(SchemaValidator({"type": "str"}).validate_python("hermes"))'
+            --env HERMES_WASI_SMOKE=1 \
+            "$GITHUB_WORKSPACE/dist/hermes"
 
       - name: Run single-file hermes launcher smoke test
         id: single-file-smoke
