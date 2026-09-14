@@ -463,7 +463,7 @@ jobs:
           set -euo pipefail
           test -s dist/hermes
           wasmtime run \
-            --dir "$GITHUB_WORKSPACE/dist::/workspace" \
+            --dir "$GITHUB_WORKSPACE/dist::/" \
             --env HERMES_WASI_SMOKE=1 \
             "$GITHUB_WORKSPACE/dist/hermes"
 
