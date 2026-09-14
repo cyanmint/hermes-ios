@@ -343,9 +343,6 @@ jobs:
           if needle not in text:
               raise SystemExit("CPython initialization marker changed; update static registry patch")
           registration = (
-              "    setenv(\"PYTHONHOME\", \"/\", 1);\n"
-              "    setenv(\"PYTHONPATH\", "
-              "\"/python/Lib:/python/site-packages:/hermes-agent:/hermes-webui\", 1);\n"
               "    if (PyImport_AppendInittab(\"_pydantic_core\", "
               "PyInit__pydantic_core) == -1) {\n"
               "        Py_FatalError(\"failed to register _pydantic_core\");\n"
@@ -360,8 +357,25 @@ jobs:
               "    for (int i = 1; i < argc; ++i) {\n"
               "        hermes_argv[i + 2] = argv[i];\n"
               "    }\n"
+              "    PyConfig config;\n"
+              "    PyConfig_InitPythonConfig(&config);\n"
+              "    config.module_search_paths_set = 1;\n"
+              "    PyWideStringList_Append(&config.module_search_paths, L\"/python/Lib\");\n"
+              "    PyWideStringList_Append(&config.module_search_paths, L\"/python/site-packages\");\n"
+              "    PyWideStringList_Append(&config.module_search_paths, L\"/hermes-agent\");\n"
+              "    PyWideStringList_Append(&config.module_search_paths, L\"/hermes-webui\");\n"
+              "    PyStatus status = PyConfig_SetBytesArgv(&config, argc + 2, hermes_argv);\n"
+              "    if (PyStatus_Exception(status)) {\n"
+              "        PyConfig_Clear(&config);\n"
+              "        Py_ExitStatusException(status);\n"
+              "    }\n"
+              "    status = Py_InitializeFromConfig(&config);\n"
+              "    PyConfig_Clear(&config);\n"
+              "    if (PyStatus_Exception(status)) {\n"
+              "        Py_ExitStatusException(status);\n"
+              "    }\n"
           )
-          replacement = registration + "    return Py_BytesMain(argc + 2, hermes_argv);\n"
+          replacement = registration + "    return Py_RunMain();\n"
           text = text.replace(needle, replacement, 1)
           path.write_text(text)
           PY
