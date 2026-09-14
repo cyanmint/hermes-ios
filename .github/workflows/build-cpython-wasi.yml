@@ -76,7 +76,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/cpython
-          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v3-no-socket
+          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v4-no-socket
 
       - name: Restore WASI SDK cache
         id: wasi-cache
@@ -165,7 +165,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/cpython
-          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v3-no-socket
+          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v4-no-socket
 
       - name: Export the locked Hermes dependency closure
         working-directory: hermes-agent
