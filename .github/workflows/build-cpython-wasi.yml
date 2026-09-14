@@ -375,6 +375,11 @@ jobs:
               --target dist/python/site-packages --no-deps \
               -r build/wasi/wasi-requirements.txt
           fi
+          # pydantic-core's Python wrapper is pure Python; its _pydantic_core
+          # native submodule is provided by the CPython builtin registration.
+          mkdir -p dist/python/site-packages/pydantic_core
+          cp -R build/native/pydantic-core/python/pydantic_core/. \
+            dist/python/site-packages/pydantic_core/
           cp -R hermes-agent dist/hermes-agent
           cp -R hermes-webui dist/hermes-webui
           cp build/wasi/hermes-requirements.txt \
