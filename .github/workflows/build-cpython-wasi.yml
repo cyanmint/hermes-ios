@@ -71,6 +71,32 @@ jobs:
           python-version: '3.13'
           cache: pip
 
+      - name: Restore CPython WASI build cache
+        id: cpython-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/cpython
+          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v1
+
+      - name: Restore WASI SDK cache
+        id: wasi-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ runner.temp }}/wasi-sdk-${{ env.WASI_SDK_VERSION }}.0-x86_64-linux.tar.gz
+            ${{ runner.temp }}/wasi-sdk-${{ env.WASI_SDK_VERSION }}.0-x86_64-linux
+          key: wasi-sdk-v1-${{ runner.os }}-${{ env.WASI_SDK_VERSION }}
+
+      - name: Restore Rust dependency and native build cache
+        id: rust-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            build/native/pydantic-core/target
+          key: pydantic-core-wasi-${{ runner.os }}-${{ env.WASM_TARGET }}-2.46.4-v1
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -83,11 +109,22 @@ jobs:
         run: |
           set -euo pipefail
           archive="wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
-          url="https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/${archive}"
-          curl --fail --location --retry 5 --retry-all-errors "$url" -o "$RUNNER_TEMP/$archive"
-          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          if [ ! -x "$RUNNER_TEMP/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux/bin/clang" ]; then
+            url="https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/${archive}"
+            curl --fail --location --retry 5 --retry-all-errors "$url" -o "$RUNNER_TEMP/$archive"
+            tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          fi
           echo "WASI_SDK_PATH=$RUNNER_TEMP/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux/bin" >> "$GITHUB_PATH"
+
+      - name: Save WASI SDK cache
+        if: steps.wasi-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/wasi-sdk-${{ env.WASI_SDK_VERSION }}.0-x86_64-linux.tar.gz
+            ${{ runner.temp }}/wasi-sdk-${{ env.WASI_SDK_VERSION }}.0-x86_64-linux
+          key: wasi-sdk-v1-${{ runner.os }}-${{ env.WASI_SDK_VERSION }}
 
       - name: Install Wasmtime and Python build helpers
         shell: bash
@@ -98,6 +135,7 @@ jobs:
           python -m pip install --upgrade pip uv maturin build packaging
 
       - name: Check out CPython
+        if: steps.cpython-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -106,6 +144,7 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/cpython" describe --exact-match --tags HEAD)" = "$CPYTHON_REF"
 
       - name: Build CPython host and WASI target
+        if: steps.cpython-cache.outputs.cache-hit != 'true'
         shell: bash
         working-directory: ${{ runner.temp }}/cpython
         env:
@@ -116,6 +155,13 @@ jobs:
           # Python followed by the wasm32-wasip1 host interpreter.
           python Tools/wasm/wasi.py build --quiet -- \
             --config-cache --without-ensurepip
+
+      - name: Save CPython WASI build cache
+        if: steps.cpython-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/cpython
+          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v1
 
       - name: Export the locked Hermes dependency closure
         working-directory: hermes-agent
@@ -194,7 +240,9 @@ jobs:
               if "sys_platform" in line or "platform_machine" in line:
                   continue
               match = re.match(r"([A-Za-z0-9_.-]+)", line)
-              if match and match.group(1).lower().replace("-", "_") in excluded:
+              if not match:
+                  continue
+              if match.group(1).lower().replace("-", "_") in excluded:
                   continue
               output.append(line)
           Path("build/wasi/wasi-requirements.txt").write_text(
@@ -258,6 +306,16 @@ jobs:
           grep -q 'PyInit__pydantic_core' build/diagnostics/pydantic-core.symbols
           cp "$archive" build/native/libpydantic_core.a
 
+      - name: Save Rust dependency and native build cache
+        if: success() && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            build/native/pydantic-core/target
+          key: pydantic-core-wasi-${{ runner.os }}-${{ env.WASM_TARGET }}-2.46.4-v1
+
       - name: Link CPython with static extension registry
         shell: bash
         env:
@@ -299,6 +357,7 @@ jobs:
           path.write_text(text)
           PY
 
+          mkdir -p "$CPYTHON_ROOT/build/native"
           cp "$GITHUB_WORKSPACE/build/native/libpydantic_core.a" \
             "$CPYTHON_ROOT/build/native/libpydantic_core.a"
           printf '\n# Hermes static extension registry\n' >> "$CPYTHON_ROOT/Modules/Setup.local"
@@ -320,9 +379,11 @@ jobs:
           # Install only the trimmed pure-Python closure. Native packages are
           # intentionally absent so the artifact exposes the next real import
           # failures instead of silently embedding host wheels.
-          python -m pip install --disable-pip-version-check \
-            --target dist/python/site-packages --no-deps \
-            -r build/wasi/wasi-requirements.txt
+          if [ -s build/wasi/wasi-requirements.txt ]; then
+            python -m pip install --disable-pip-version-check \
+              --target dist/python/site-packages --no-deps \
+              -r build/wasi/wasi-requirements.txt
+          fi
           cp -R hermes-agent dist/hermes-agent
           cp -R hermes-webui dist/hermes-webui
           cp build/wasi/hermes-requirements.txt \
