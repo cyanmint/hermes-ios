@@ -290,7 +290,9 @@ jobs:
               "extern void hermes_register_static_extensions(void);\n\n" + marker,
               1,
           )
-          needle = "    Py_Initialize();\n"
+          # Python 3.13's minimal Programs/python.c delegates initialization
+          # to Py_BytesMain; register builtins immediately before that call.
+          needle = "    return Py_BytesMain(argc, argv);\n"
           if needle not in text:
               raise SystemExit("CPython initialization marker changed; update static registry patch")
           text = text.replace(needle, "    hermes_register_static_extensions();\n" + needle, 1)
@@ -318,7 +320,8 @@ jobs:
           # Install only the trimmed pure-Python closure. Native packages are
           # intentionally absent so the artifact exposes the next real import
           # failures instead of silently embedding host wheels.
-          uv pip install --target dist/python/site-packages --no-deps \
+          python -m pip install --disable-pip-version-check \
+            --target dist/python/site-packages --no-deps \
             -r build/wasi/wasi-requirements.txt
           cp -R hermes-agent dist/hermes-agent
           cp -R hermes-webui dist/hermes-webui
