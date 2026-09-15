@@ -227,10 +227,13 @@ def forward_stderr(stream: BinaryIO) -> None:
 
 def _find_artifact() -> Path:
     """Find the bundled Hermes runtime without requiring a CLI option."""
-    candidates = [
-        Path(__file__).resolve().with_name("hermes"),
-        Path.cwd() / "hermes",
-    ]
+    candidates: list[Path] = []
+    for start in (Path(__file__).parent, Path.cwd()):
+        current = start.resolve()
+        for directory in (current, *current.parents):
+            candidate = directory / "hermes"
+            if candidate not in candidates:
+                candidates.append(candidate)
     configured = os.environ.get("HERMES_ARTIFACT")
     if configured:
         candidates.insert(0, Path(configured).expanduser())
