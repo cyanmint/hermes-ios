@@ -325,6 +325,15 @@ def main() -> int:
     environment["PYTHONPATH"] = os.pathsep.join(
         ("python/Lib", "lib/python3.13", "/python/Lib", "/lib/python3.13", environment.get("PYTHONPATH", ""))
     ).rstrip(os.pathsep)
+    # --version produces no RPC traffic.  Replace the wrapper process instead
+    # of creating a-Shell's unreliable nested stdin/stdout pipes; this also
+    # preserves normal terminal Ctrl-C behavior for the version probe.
+    if any(arg in {"--version", "-V"} for arg in args):
+        try:
+            os.execvpe(command[0], command, environment)
+        except OSError as exc:
+            print(f"loader: unable to execute WASM: {exc}", file=sys.stderr, flush=True)
+            return 2
     child = subprocess.Popen(
         command,
         cwd=str(artifact.parent),
@@ -333,20 +342,6 @@ def main() -> int:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    if any(arg in {"--version", "-V"} for arg in args):
-        try:
-            stdout, stderr = child.communicate(timeout=30)
-        except KeyboardInterrupt:
-            print("loader: interrupted; stopping WASM", file=sys.stderr, flush=True)
-            return _reap_child(child)
-        except subprocess.TimeoutExpired:
-            print("loader: WASM --version timed out", file=sys.stderr, flush=True)
-            return _reap_child(child)
-        sys.stdout.buffer.write(stdout)
-        sys.stdout.buffer.flush()
-        sys.stderr.buffer.write(stderr)
-        sys.stderr.buffer.flush()
-        return child.returncode
     assert child.stderr is not None
     threading.Thread(target=forward_stderr, args=(child.stderr,), daemon=True).start()
     try:
