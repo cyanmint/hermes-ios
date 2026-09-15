@@ -62,6 +62,9 @@ main(int argc, char **argv)
         L"/python/Lib",
         L"/python/site-packages",
         L"/lib/python3.13",
+        L"/hermes-runtime/python/Lib",
+        L"/hermes-runtime/python/site-packages",
+        L"/hermes-runtime/lib/python3.13",
     };
     for (size_t i = 0; i < sizeof(search_paths) / sizeof(search_paths[0]); ++i) {
         PyStatus path_status = PyWideStringList_Append(
