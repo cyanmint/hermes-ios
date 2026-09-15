@@ -323,7 +323,7 @@ def main() -> int:
     # builds use lib/python3.13.  CPython imports encodings before sitecustomize
     # can adjust sys.path, so provide both layouts at process startup.
     environment["PYTHONPATH"] = os.pathsep.join(
-        ("/python/Lib", "/lib/python3.13", environment.get("PYTHONPATH", ""))
+        ("python/Lib", "lib/python3.13", "/python/Lib", "/lib/python3.13", environment.get("PYTHONPATH", ""))
     ).rstrip(os.pathsep)
     child = subprocess.Popen(
         command,
@@ -336,6 +336,9 @@ def main() -> int:
     if any(arg in {"--version", "-V"} for arg in args):
         try:
             stdout, stderr = child.communicate(timeout=30)
+        except KeyboardInterrupt:
+            print("loader: interrupted; stopping WASM", file=sys.stderr, flush=True)
+            return _reap_child(child)
         except subprocess.TimeoutExpired:
             print("loader: WASM --version timed out", file=sys.stderr, flush=True)
             return _reap_child(child)
@@ -346,7 +349,11 @@ def main() -> int:
         return child.returncode
     assert child.stderr is not None
     threading.Thread(target=forward_stderr, args=(child.stderr,), daemon=True).start()
-    return serve_child(child)
+    try:
+        return serve_child(child)
+    except KeyboardInterrupt:
+        print("loader: interrupted; stopping WASM", file=sys.stderr, flush=True)
+        return _reap_child(child)
 
 
 if __name__ == "__main__":
