@@ -22,7 +22,7 @@ a-Shell 原生 Python 运行 loader；loader 启动 WASI Preview 1 的 CPython W
 
 `loader.py` 是宿主入口，负责：
 
-- 启动 `wasm` 命令或本地 Wasmtime
+- 自动发现 a-Shell 的 `wasm` 命令或本地 Wasmtime
 - 管理 WASM 子进程的 stdin/stdout/stderr
 - 解析 4 字节大端长度前缀的 JSON frame
 - 执行 WASM 发出的 `socket.*` 与 `net.request` 请求
@@ -172,17 +172,27 @@ bash /mnt/w/_/hermes-ios/build-local-wasi.sh
 
 ### 启动
 
+loader 是透明入口：它自动使用同目录的 `hermes` runtime，并把所有参数原样传给它。
+
 在 a-Shell 中：
 
 ```sh
-python3 loader.py --wasm-command wasm hermes --help
+python3 loader.py
+python3 loader.py --version
+python3 loader.py model
+python3 loader.py --help
 ```
 
 在桌面 WSL 中使用 Wasmtime 验证 loader 路径：
 
 ```sh
-python3 loader.py --wasm-command wasmtime hermes --version
+python3 loader.py --version
 ```
+
+loader 会按以下顺序寻找运行时：`HERMES_ARTIFACT`、`loader.py` 同目录的
+`hermes`、当前目录的 `hermes`；会自动寻找 PATH 中的 `wasm`/`wasmtime`，
+以及 a-Shell app bundle 内的 `wasm`。仅在诊断时可通过
+`HERMES_WASM_COMMAND` 指定执行器，正常用户不需要任何额外参数。
 
 不能使用以下方式作为正式启动路径：
 

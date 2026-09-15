@@ -32,10 +32,13 @@ wasm32-wasip1 CPython
 
 ### 2.1 loader 是唯一入口
 
-用户只启动 a-Shell 原生 Python 的 `loader.py`：
+用户只启动 a-Shell 原生 Python 的 `loader.py`，不需要知道 WASM 执行器或
+artifact 路径：
 
 ```sh
-python3 loader.py --wasm-command wasm hermes --help
+python3 loader.py
+python3 loader.py --version
+python3 loader.py model
 ```
 
 loader 再启动 WASM：
@@ -45,7 +48,9 @@ loader.py
   └─ subprocess: wasm hermes
 ```
 
-桌面验证可以把 `--wasm-command` 换成 `wasmtime`。`hermes` 文件本身不是用户入口；直接运行它会绕过所有网络和 stdio 转发能力，不能作为通过标准的运行方式。
+loader 自动定位同目录的 `hermes`，并自动发现 a-Shell bundle 中的 `wasm`。
+桌面验证会自动使用 PATH 中的 `wasmtime`。`hermes` 文件本身不是用户入口；
+直接运行它会绕过所有网络和 stdio 转发能力，不能作为通过标准的运行方式。
 
 ### 2.2 stdin/stdout 是 framed RPC
 
@@ -326,7 +331,7 @@ wasi_snapshot_preview1:sock_shutdown
 在 loader 下执行：
 
 ```sh
-python3 loader.py --wasm-command wasmtime hermes --version
+python3 loader.py --version
 ```
 
 再执行原生模组和网络联合探针：

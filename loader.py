@@ -7,13 +7,13 @@ stderr is forwarded to the loader's stderr and never enters the RPC stream.
 """
 from __future__ import annotations
 
-import argparse
 import base64
 import json
 import os
 from pathlib import Path
 import socket
 import ssl
+import shutil
 import subprocess
 import sys
 import threading
@@ -225,29 +225,74 @@ def forward_stderr(stream: BinaryIO) -> None:
         sys.stderr.buffer.flush()
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("artifact", help="WASI component/core artifact path")
-    parser.add_argument("args", nargs=argparse.REMAINDER, help="arguments passed to Hermes")
-    parser.add_argument("--wasm-command", default="wasm", help="a-Shell WASM command")
-    ns = parser.parse_args()
-    if Path(ns.wasm_command).name == "wasmtime":
-        root = str(Path(ns.artifact).resolve().parent)
+def _find_artifact() -> Path:
+    """Find the bundled Hermes runtime without requiring a CLI option."""
+    candidates = [
+        Path(__file__).resolve().with_name("hermes"),
+        Path.cwd() / "hermes",
+    ]
+    configured = os.environ.get("HERMES_ARTIFACT")
+    if configured:
+        candidates.insert(0, Path(configured).expanduser())
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    searched = ", ".join(str(path) for path in candidates)
+    raise LoaderError("ARTIFACT_NOT_FOUND", f"Hermes runtime not found; searched: {searched}")
+
+
+def _find_wasm_command() -> str:
+    """Find a-Shell's wasm launcher, with Wasmtime as a desktop fallback."""
+    configured = os.environ.get("HERMES_WASM_COMMAND") or os.environ.get("WASM_COMMAND")
+    if configured:
+        return str(Path(configured).expanduser())
+    for name in ("wasm", "wasmtime"):
+        found = shutil.which(name)
+        if found:
+            return found
+    # a-Shell does not put its bundled launcher on PATH.  The application UUID
+    # changes between installs, so discover it rather than hard-coding one.
+    bundle_candidates = sorted(Path("/private/var/containers/Bundle/Application").glob("*/a-Shell.app/bin/wasm"))
+    if bundle_candidates:
+        return str(bundle_candidates[0])
+    raise LoaderError(
+        "WASM_COMMAND_NOT_FOUND",
+        "could not find a-Shell wasm launcher or Wasmtime (set HERMES_WASM_COMMAND only for debugging)",
+    )
+
+
+def _build_command(artifact: Path, args: list[str]) -> list[str]:
+    wasm_command = _find_wasm_command()
+    if Path(wasm_command).name == "wasmtime":
+        root = str(artifact.parent)
         home = os.environ.get("HOME") or "/"
         command = [
-            ns.wasm_command, "run",
+            wasm_command, "run",
             "--env", f"HOME={home}",
             "--dir", f"{root}::/",
         ]
     else:
-        command = [ns.wasm_command]
+        command = [wasm_command]
+    return [*command, str(artifact), *args]
+
+
+def main() -> int:
+    # loader.py is intentionally transparent: every user argument belongs to
+    # the bundled ./hermes runtime, not to this wrapper.
+    args = sys.argv[1:]
+    try:
+        artifact = _find_artifact()
+        command = _build_command(artifact, args)
+    except LoaderError as exc:
+        print(f"loader: {exc.message}", file=sys.stderr)
+        return 2
     child = subprocess.Popen(
-        [*command, ns.artifact, *ns.args],
+        command,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    if any(arg in {"--version", "-V"} for arg in ns.args):
+    if any(arg in {"--version", "-V"} for arg in args):
         stdout, stderr = child.communicate()
         sys.stdout.buffer.write(stdout)
         sys.stdout.buffer.flush()
