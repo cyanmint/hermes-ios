@@ -75,6 +75,15 @@ class DebugServer:
         if processes:
             await asyncio.gather(*(self.terminate_process(process, reason) for process in processes))
 
+    async def restart(self, writer: asyncio.StreamWriter) -> None:
+        """Restart this server in place, preserving its original arguments."""
+        send_json(writer, {"ok": True, "event": "restart", "status": "restarting"})
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+        await self.terminate_all("debug server restart")
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+
     def resolve_path(self, raw: str) -> Path:
         candidate = (self.root / raw).resolve() if not os.path.isabs(raw) else Path(raw).resolve()
         try:
@@ -118,6 +127,8 @@ class DebugServer:
             await self.download(request, writer)
         elif op == "ping":
             send_json(writer, {"ok": True, "event": "pong"})
+        elif op == "restart":
+            await self.restart(writer)
         else:
             raise ValueError(f"unknown operation: {op!r}")
 

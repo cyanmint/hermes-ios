@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Client for ashell-debug-server.py; stdlib only."""
+"""USB-forwarded client for ashell-debug-server.py; stdlib only.
+
+The server is intentionally reachable only through the host-side loopback
+port. Forward the device port over USB (for example with ``iproxy``) and use
+that forwarded local port here.
+"""
 from __future__ import annotations
 
 import argparse
@@ -10,7 +15,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-CHUNK = 48 * 1024
+# Keep JSON request lines below asyncio's default 64 KiB stream limit on
+# already-running older debug servers.
+CHUNK = 32 * 1024
+LOOPBACK_HOST = "127.0.0.1"
 
 
 def send(sock: socket.socket, value: dict[str, Any]) -> None:
@@ -25,12 +33,8 @@ def receive(stream) -> dict[str, Any]:
 
 
 def connect(args):
-    sock = socket.create_connection((args.host, args.port), args.timeout)
+    sock = socket.create_connection((LOOPBACK_HOST, args.port), args.timeout)
     stream = sock.makefile("rb")
-    send(sock, {"op": "auth", "password": args.password})
-    reply = receive(stream)
-    if not reply.get("ok"):
-        raise PermissionError("debug password rejected")
     return sock, stream
 
 
@@ -76,6 +80,25 @@ def upload(args) -> int:
         sock.close()
 
 
+def update(args) -> int:
+    """Atomically replace a debugger script without starting Python."""
+    source = Path(args.local)
+    size = source.stat().st_size
+    sock, stream = connect(args)
+    try:
+        send(sock, {"op": "update", "path": args.remote, "size": size})
+        with source.open("rb") as input_file:
+            while data := input_file.read(CHUNK):
+                send(sock, {"op": "chunk", "data": base64.b64encode(data).decode("ascii")})
+        reply = receive(stream)
+        if not reply.get("ok"):
+            raise RuntimeError(reply.get("error", "debugger update failed"))
+        print(json.dumps(reply, ensure_ascii=False))
+        return 0
+    finally:
+        sock.close()
+
+
 def download(args) -> int:
     sock, stream = connect(args)
     try:
@@ -103,11 +126,23 @@ def download(args) -> int:
         sock.close()
 
 
+def restart(args) -> int:
+    sock, stream = connect(args)
+    try:
+        send(sock, {"op": "restart"})
+        reply = receive(stream)
+        if not reply.get("ok") or reply.get("event") != "restart":
+            print(reply.get("error", "restart failed"), file=sys.stderr)
+            return 1
+        print("debug server restarting")
+        return 0
+    finally:
+        sock.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", required=True)
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--password", required=True)
     parser.add_argument("--timeout", type=float, default=10)
     sub = parser.add_subparsers(dest="operation", required=True)
     run = sub.add_parser("exec")
@@ -117,9 +152,16 @@ def main() -> int:
     put = sub.add_parser("upload")
     put.add_argument("local")
     put.add_argument("remote")
+    update_parser = sub.add_parser(
+        "update",
+        help="atomically replace a remote debugger script without spawning Python",
+    )
+    update_parser.add_argument("local")
+    update_parser.add_argument("remote", nargs="?", default="ashell-debug-server.py")
     get = sub.add_parser("download")
     get.add_argument("remote")
     get.add_argument("local")
+    sub.add_parser("restart", help="restart the a-Shell debug server in place")
     args = parser.parse_args()
     if args.operation == "exec":
         if args.argv and args.argv[0] == "--":
@@ -129,6 +171,10 @@ def main() -> int:
         return command(args)
     if args.operation == "upload":
         return upload(args)
+    if args.operation == "update":
+        return update(args)
+    if args.operation == "restart":
+        return restart(args)
     return download(args)
 
 
