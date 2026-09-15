@@ -292,9 +292,17 @@ def main() -> int:
     except LoaderError as exc:
         print(f"loader: {exc.message}", file=sys.stderr)
         return 2
+    environment = os.environ.copy()
+    # The delivered a-Shell bundle historically used python/Lib, while newer
+    # builds use lib/python3.13.  CPython imports encodings before sitecustomize
+    # can adjust sys.path, so provide both layouts at process startup.
+    environment["PYTHONPATH"] = os.pathsep.join(
+        ("/python/Lib", "/lib/python3.13", environment.get("PYTHONPATH", ""))
+    ).rstrip(os.pathsep)
     child = subprocess.Popen(
         command,
         cwd=str(artifact.parent),
+        env=environment,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
