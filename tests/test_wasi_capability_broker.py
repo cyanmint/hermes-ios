@@ -6,7 +6,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import wasi_capability_broker as broker
+from tests.support import wasi_capability_broker as broker
 
 
 class Handler(BaseHTTPRequestHandler):
