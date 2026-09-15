@@ -372,7 +372,7 @@ def main() -> int:
     # interpreter can find encodings before sitecustomize runs.
     environment["PYTHONHOME"] = "/"
     environment["PYTHONPATH"] = os.pathsep.join(
-        ("/hermes-runtime.zip/python/site-packages",
+        ("/hermes-runtime.zip/lib/python3.13/site-packages",
          "/hermes-runtime.zip/lib/python3.13")
     )
     child = subprocess.Popen(

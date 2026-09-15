@@ -59,12 +59,10 @@ main(int argc, char **argv)
     const wchar_t *search_paths[] = {
         L"/Lib",
         L"/cross-build/wasm32-wasip1/build/lib.wasi-wasm32-3.13",
-        L"/python/site-packages",
         L"/lib/python3.13",
-        L"/hermes-runtime/python/site-packages",
         L"/hermes-runtime/lib/python3.13",
-        L"/hermes-runtime.zip/python/site-packages",
         L"/hermes-runtime.zip/lib/python3.13",
+        L"/hermes-runtime.zip/lib/python3.13/site-packages",
     };
     for (size_t i = 0; i < sizeof(search_paths) / sizeof(search_paths[0]); ++i) {
         PyStatus path_status = PyWideStringList_Append(

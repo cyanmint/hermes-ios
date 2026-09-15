@@ -40,14 +40,15 @@ chmod +x "$OUTPUT"
 # CPython still needs its standard library and project overlays at runtime.
 # Keep those support files separate from the two named delivery entrypoints.
 rm -rf "$ROOT/hermes-runtime" "$RUNTIME_ARCHIVE"
-mkdir -p "$STAGE_ROOT/lib/python3.13" "$STAGE_ROOT/python"
+mkdir -p "$STAGE_ROOT/lib/python3.13/site-packages"
 copy_tree "$SOURCE_ARTIFACT/lib" "$STAGE_ROOT/lib"
 [ -d "$CPYTHON_SOURCE/Lib" ] || {
   printf 'missing CPython standard library: %s\n' "$CPYTHON_SOURCE/Lib" >&2
   exit 3
 }
 copy_tree "$CPYTHON_SOURCE/Lib" "$STAGE_ROOT/lib/python3.13"
-copy_tree "$ROOT/overlay/hermes" "$STAGE_ROOT/python/site-packages"
+rm -rf "$STAGE_ROOT/lib/python3.13/site-packages"
+copy_tree "$ROOT/overlay/hermes" "$STAGE_ROOT/lib/python3.13/site-packages"
 copy_tree "$ROOT/overlay/python" "$STAGE_ROOT/lib/python3.13"
 
 # Build the complete zip in WSL and copy one file across the Windows
