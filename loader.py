@@ -197,6 +197,11 @@ def _dispatch(frame: dict[str, Any], sockets: dict[int, socket.socket]) -> dict[
         try: return {"type": "response", "id": request_id, "ok": True, "result": _socket_dispatch(sockets, {"method": frame["method"], **(frame.get("params") or {})})}
         except LoaderError as exc: return _error(request_id, exc.code, exc.message)
         except (OSError, ValueError, KeyError) as exc: return _error(request_id, "SOCKET_ERROR", str(exc))
+    if frame.get("method") == "crypto.random" and isinstance(frame.get("params"), dict):
+        size = int(frame["params"].get("size", 0))
+        if not 0 <= size <= 1024 * 1024:
+            return _error(request_id, "INVALID_ARGUMENT", "invalid random size")
+        return {"type": "response", "id": request_id, "ok": True, "result": {"data": base64.b64encode(os.urandom(size)).decode("ascii")}}
     if frame.get("method") == "net.request" and isinstance(frame.get("params"), dict): return _request(request_id, frame["params"])
     return _error(request_id, "CAPABILITY_UNAVAILABLE", "unsupported capability")
 
@@ -226,9 +231,14 @@ def main() -> int:
     parser.add_argument("args", nargs=argparse.REMAINDER, help="arguments passed to Hermes")
     parser.add_argument("--wasm-command", default="wasm", help="a-Shell WASM command")
     ns = parser.parse_args()
-    if ns.wasm_command == "wasmtime":
+    if Path(ns.wasm_command).name == "wasmtime":
         root = str(Path(ns.artifact).resolve().parent)
-        command = [ns.wasm_command, "run", "--dir", f"{root}::/"]
+        home = os.environ.get("HOME") or "/"
+        command = [
+            ns.wasm_command, "run",
+            "--env", f"HOME={home}",
+            "--dir", f"{root}::/",
+        ]
     else:
         command = [ns.wasm_command]
     child = subprocess.Popen(
@@ -237,6 +247,13 @@ def main() -> int:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+    if any(arg in {"--version", "-V"} for arg in ns.args):
+        stdout, stderr = child.communicate()
+        sys.stdout.buffer.write(stdout)
+        sys.stdout.buffer.flush()
+        sys.stderr.buffer.write(stderr)
+        sys.stderr.buffer.flush()
+        return child.returncode
     assert child.stderr is not None
     threading.Thread(target=forward_stderr, args=(child.stderr,), daemon=True).start()
     return serve_child(child)

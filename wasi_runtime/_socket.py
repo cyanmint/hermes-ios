@@ -20,11 +20,17 @@ def getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     result = wasi_loader.call("socket.resolve", {"host": host, "port": port, "family": family, "type": type, "proto": proto, "flags": flags})
     return [tuple(item) for item in result.get("addresses", [])]
 class socket:
-    __slots__ = ("_id", "family", "type", "proto", "timeout", "_closed")
+    __slots__ = ("_id", "_family", "_type", "_proto", "timeout", "_closed")
     def __init__(self, family=AF_INET, type=SOCK_STREAM, proto=0, fileno=None):
         self._id = int(fileno) if fileno is not None else wasi_loader.call("socket.open", {"family": family, "type": type, "proto": proto}).get("id")
-        self.family, self.type, self.proto, self.timeout = family, type, proto, _default_timeout
+        self._family, self._type, self._proto, self.timeout = family, type, proto, _default_timeout
         self._closed = False
+    @property
+    def family(self): return self._family
+    @property
+    def type(self): return self._type
+    @property
+    def proto(self): return self._proto
     def connect(self, address):
         host, port = address[:2]
         wasi_loader.call("socket.connect", {"id": self._id, "host": host, "port": port, "timeout": self.timeout})
@@ -48,6 +54,11 @@ class socket:
     def close(self):
         if not self._closed: self._closed = True; wasi_loader.call("socket.close", {"id": self._id})
     def fileno(self): return self._id
+    def detach(self):
+        sid = self._id
+        self._id = -1
+        self._closed = True
+        return sid
     def __enter__(self): return self
     def __exit__(self, *_): self.close()
     def makefile(self, mode="r", buffering=None, **kwargs): return _SocketFile(self, mode)

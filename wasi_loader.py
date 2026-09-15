@@ -12,10 +12,12 @@ import sys
 from typing import Any
 
 _next_id = 1
+_rpc_stdin = sys.stdin.buffer
+_rpc_stdout = sys.stdout.buffer
 
 
 def _read_exact(size: int) -> bytes:
-    data = sys.stdin.buffer.read(size)
+    data = _rpc_stdin.read(size)
     if len(data) != size:
         raise RuntimeError("loader closed the RPC channel")
     return data
@@ -29,8 +31,8 @@ def call(method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         {"type": "request", "id": request_id, "method": method, "params": params or {}},
         separators=(",", ":"),
     ).encode("utf-8")
-    sys.stdout.buffer.write(len(payload).to_bytes(4, "big") + payload)
-    sys.stdout.buffer.flush()
+    _rpc_stdout.write(len(payload).to_bytes(4, "big") + payload)
+    _rpc_stdout.flush()
     size = int.from_bytes(_read_exact(4), "big")
     response = json.loads(_read_exact(size).decode("utf-8"))
     if response.get("id") != request_id:
@@ -47,8 +49,8 @@ def emit(stream: str, data: bytes) -> None:
          "data": {"encoding": "base64", "data": base64.b64encode(data).decode("ascii")}},
         separators=(",", ":"),
     ).encode("utf-8")
-    sys.stdout.buffer.write(len(payload).to_bytes(4, "big") + payload)
-    sys.stdout.buffer.flush()
+    _rpc_stdout.write(len(payload).to_bytes(4, "big") + payload)
+    _rpc_stdout.flush()
 
 
 def install_stdio() -> None:
