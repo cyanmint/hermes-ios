@@ -47,21 +47,21 @@ class LoaderTests(unittest.TestCase):
         with patch.object(loader, "_find_wasm_command", return_value="/bin/wasm"):
             self.assertEqual(
                 loader._build_command(Path("/bundle/hermes"), []),
-                ["/bin/wasm", str(Path("/bundle/hermes"))],
+                ["/bin/wasm", "hermes"],
             )
 
     def test_transparent_command_forwards_version(self):
         with patch.object(loader, "_find_wasm_command", return_value="/bin/wasm"):
             self.assertEqual(
                 loader._build_command(Path("/bundle/hermes"), ["--version"]),
-                ["/bin/wasm", str(Path("/bundle/hermes")), "--version"],
+                ["/bin/wasm", "hermes", "--version"],
             )
 
     def test_transparent_command_forwards_model(self):
         with patch.object(loader, "_find_wasm_command", return_value="/bin/wasm"):
             self.assertEqual(
                 loader._build_command(Path("/bundle/hermes"), ["model"]),
-                ["/bin/wasm", str(Path("/bundle/hermes")), "model"],
+                ["/bin/wasm", "hermes", "model"],
             )
 
 

@@ -273,7 +273,10 @@ def _build_command(artifact: Path, args: list[str]) -> list[str]:
         ]
     else:
         command = [wasm_command]
-    return [*command, str(artifact), *args]
+    # a-Shell's bundled launcher requires the WASM entry path to be relative
+    # to its working directory; absolute sandbox paths make it terminate the
+    # hosting Python process before producing stderr.
+    return [*command, artifact.name, *args]
 
 
 def main() -> int:
@@ -288,6 +291,7 @@ def main() -> int:
         return 2
     child = subprocess.Popen(
         command,
+        cwd=str(artifact.parent),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
