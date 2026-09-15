@@ -43,25 +43,25 @@ class LoaderTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"]["code"], "NETWORK_POLICY")
 
-    def test_transparent_command_without_arguments(self):
+    def test_wasm_command_without_arguments(self):
         with patch.object(loader, "_find_wasm_command", return_value="/bin/wasm"):
             self.assertEqual(
-                loader._build_command(Path("/bundle/hermes"), []),
-                ["/bin/wasm", "hermes"],
+                loader._build_command(Path("/bundle/hermes.wasm"), []),
+                ["/bin/wasm", "hermes.wasm", "-m", "hermes_cli.main", "--help"],
             )
 
-    def test_transparent_command_forwards_version(self):
+    def test_wasm_command_forwards_version(self):
         with patch.object(loader, "_find_wasm_command", return_value="/bin/wasm"):
             self.assertEqual(
-                loader._build_command(Path("/bundle/hermes"), ["--version"]),
-                ["/bin/wasm", "hermes", "--version"],
+                loader._build_command(Path("/bundle/hermes.wasm"), ["--version"]),
+                ["/bin/wasm", "hermes.wasm", "-m", "hermes_cli.main", "--version"],
             )
 
-    def test_transparent_command_forwards_model(self):
+    def test_wasm_command_forwards_model(self):
         with patch.object(loader, "_find_wasm_command", return_value="/bin/wasm"):
             self.assertEqual(
-                loader._build_command(Path("/bundle/hermes"), ["model"]),
-                ["/bin/wasm", "hermes", "model"],
+                loader._build_command(Path("/bundle/hermes.wasm"), ["model"]),
+                ["/bin/wasm", "hermes.wasm", "-m", "hermes_cli.main", "model"],
             )
 
 

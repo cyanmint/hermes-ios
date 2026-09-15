@@ -3269,7 +3269,12 @@ def _build_cli_parser():
     build_console_parser(subparsers, cmd_console=cmd_console)
     build_pairing_parser(subparsers, cmd_pairing=cmd_pairing)
     build_skills_parser(subparsers, cmd_skills=cmd_skills)
-    build_bundles_parser(subparsers)
+    try:
+        build_bundles_parser(subparsers)
+    except ModuleNotFoundError as exc:
+        # WASI builds may omit optional compression backends used by rich.
+        if exc.name != "zlib":
+            raise
     build_plugins_parser(subparsers, cmd_plugins=cmd_plugins)
 
     _register_plugin_cli_commands(subparsers)

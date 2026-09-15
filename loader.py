@@ -186,13 +186,10 @@ def _socket_dispatch(sockets: dict[int, socket.socket], params: dict[str, Any]) 
 
 def _dispatch(frame: dict[str, Any], sockets: dict[int, socket.socket]) -> dict[str, Any] | None:
     request_id = frame.get("id")
-    if frame.get("type") == "event" and frame.get("event") == "io.write":
-        raw = base64.b64decode(frame.get("data", {}).get("data", ""), validate=True)
-        target = sys.stdout.buffer if frame.get("stream") == "stdout" else sys.stderr.buffer
-        target.write(raw); target.flush(); return None
+
     if frame.get("type") != "request": return _error(request_id, "MALFORMED_REQUEST", "type must be request")
     if frame.get("method") == "handshake":
-        return {"type": "response", "id": request_id, "ok": True, "result": {"protocol": 2, "capabilities": ["io.write", "socket", "ssl", "net.request"]}}
+        return {"type": "response", "id": request_id, "ok": True, "result": {"protocol": 2, "capabilities": ["stdio.output", "socket", "ssl", "net.request"]}}
     if frame.get("method", "").startswith("socket."):
         try: return {"type": "response", "id": request_id, "ok": True, "result": _socket_dispatch(sockets, {"method": frame["method"], **(frame.get("params") or {})})}
         except LoaderError as exc: return _error(request_id, exc.code, exc.message)
@@ -217,7 +214,12 @@ def _reap_child(process: subprocess.Popen[bytes]) -> int:
         return process.wait()
 
 
-def serve_child(process: subprocess.Popen[bytes]) -> int:
+def serve_child(
+    process: subprocess.Popen[bytes],
+    *,
+    write_lock: threading.Lock | None = None,
+    input_stop: threading.Event | None = None,
+) -> int:
     assert process.stdin is not None and process.stdout is not None
     sockets: dict[int, socket.socket] = {}
     while True:
@@ -227,9 +229,24 @@ def serve_child(process: subprocess.Popen[bytes]) -> int:
                 if process.poll() is None:
                     print("loader: WASM stdout pipe closed unexpectedly", file=sys.stderr, flush=True)
                 break
+            if frame.get("type") == "event":
+                # Accept the old internal name from already-built WASM images,
+                # but expose only the frozen stdio.output protocol externally.
+                if frame.get("event") == "io.write":
+                    frame = {**frame, "event": "stdio.output"}
+                if frame.get("event") not in {"stdio.output", "socket.data"}:
+                    print("loader: unexpected WASM event", file=sys.stderr, flush=True)
+                    returncode = _reap_child(process)
+                    break
+                write_frame(sys.stdout.buffer, frame)
+                continue
             response = _dispatch(frame, sockets)
             if response is not None:
-                write_frame(process.stdin, response)
+                if write_lock is None:
+                    write_frame(process.stdin, response)
+                else:
+                    with write_lock:
+                        write_frame(process.stdin, response)
         except LoaderError as exc:
             print(f"loader: WASM protocol error [{exc.code}]: {exc.message}", file=sys.stderr, flush=True)
             returncode = _reap_child(process)
@@ -240,6 +257,8 @@ def serve_child(process: subprocess.Popen[bytes]) -> int:
             break
     for sock in sockets.values():
         sock.close()
+    if input_stop is not None:
+        input_stop.set()
     if "returncode" in locals():
         return returncode if returncode != 0 else 1
     return process.wait()
@@ -251,13 +270,32 @@ def forward_stderr(stream: BinaryIO) -> None:
         sys.stderr.buffer.flush()
 
 
+def forward_input(process: subprocess.Popen[bytes], write_lock: threading.Lock, stop: threading.Event) -> None:
+    """Forward formatted host input frames to the direct WASM child."""
+    assert process.stdin is not None
+    try:
+        while not stop.is_set():
+            frame = read_frame(sys.stdin.buffer)
+            if frame is None:
+                break
+            with write_lock:
+                write_frame(process.stdin, frame)
+    except (LoaderError, BrokenPipeError, OSError) as exc:
+        print(f"loader: input protocol error: {exc}", file=sys.stderr, flush=True)
+    finally:
+        try:
+            process.stdin.close()
+        except OSError:
+            pass
+
+
 def _find_artifact() -> Path:
-    """Find the bundled Hermes runtime without requiring a CLI option."""
+    """Find the direct WASM delivery artifact."""
     candidates: list[Path] = []
     for start in (Path(__file__).parent, Path.cwd()):
         current = start.resolve()
         for directory in (current, *current.parents):
-            candidate = directory / "hermes"
+            candidate = directory / "hermes.wasm"
             if candidate not in candidates:
                 candidates.append(candidate)
     configured = os.environ.get("HERMES_ARTIFACT")
@@ -268,6 +306,16 @@ def _find_artifact() -> Path:
             return candidate.resolve()
     searched = ", ".join(str(path) for path in candidates)
     raise LoaderError("ARTIFACT_NOT_FOUND", f"Hermes runtime not found; searched: {searched}")
+
+
+def _find_runtime_root(artifact: Path) -> Path:
+    configured = os.environ.get("HERMES_RUNTIME_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    adjacent = artifact.parent / "hermes-runtime"
+    if adjacent.is_dir():
+        return adjacent.resolve()
+    return artifact.parent.resolve()
 
 
 def _find_wasm_command() -> str:
@@ -293,7 +341,7 @@ def _find_wasm_command() -> str:
 def _build_command(artifact: Path, args: list[str]) -> list[str]:
     wasm_command = _find_wasm_command()
     if Path(wasm_command).name == "wasmtime":
-        root = str(artifact.parent)
+        root = str(_find_runtime_root(artifact))
         home = os.environ.get("HOME") or "/"
         command = [
             wasm_command, "run",
@@ -304,13 +352,18 @@ def _build_command(artifact: Path, args: list[str]) -> list[str]:
         command = [wasm_command]
     # a-Shell's bundled launcher requires the WASM entry path to be relative
     # to its working directory; absolute sandbox paths make it terminate the
-    # hosting Python process before producing stderr.
-    return [*command, artifact.name, *args]
+    # hosting Python process before producing stderr. The module is CPython
+    # with Hermes installed in its runtime tree, so route CLI arguments to the
+    # Hermes module without introducing another executable wrapper.
+    hermes_args = list(args)
+    if not hermes_args:
+        hermes_args = ["--help"]
+    return [*command, artifact.name, "-m", "hermes_cli.main", *hermes_args]
 
 
 def main() -> int:
-    # loader.py is intentionally transparent: every user argument belongs to
-    # the bundled ./hermes runtime, not to this wrapper.
+    # loader.py is the host-side frame broker; hermes.wasm is the direct WASM
+    # delivery artifact and never gets replaced by a shell launcher.
     args = sys.argv[1:]
     try:
         artifact = _find_artifact()
@@ -322,18 +375,11 @@ def main() -> int:
     # The delivered a-Shell bundle historically used python/Lib, while newer
     # builds use lib/python3.13.  CPython imports encodings before sitecustomize
     # can adjust sys.path, so provide both layouts at process startup.
+    runtime_root = _find_runtime_root(artifact)
     environment["PYTHONPATH"] = os.pathsep.join(
-        ("python/Lib", "lib/python3.13", "/python/Lib", "/lib/python3.13", environment.get("PYTHONPATH", ""))
+        (str(runtime_root / "python/Lib"), str(runtime_root / "lib/python3.13"),
+         "/python/Lib", "/lib/python3.13", environment.get("PYTHONPATH", ""))
     ).rstrip(os.pathsep)
-    # --version produces no RPC traffic.  Replace the wrapper process instead
-    # of creating a-Shell's unreliable nested stdin/stdout pipes; this also
-    # preserves normal terminal Ctrl-C behavior for the version probe.
-    if any(arg in {"--version", "-V"} for arg in args):
-        try:
-            os.execvpe(command[0], command, environment)
-        except OSError as exc:
-            print(f"loader: unable to execute WASM: {exc}", file=sys.stderr, flush=True)
-            return 2
     child = subprocess.Popen(
         command,
         cwd=str(artifact.parent),
@@ -344,8 +390,11 @@ def main() -> int:
     )
     assert child.stderr is not None
     threading.Thread(target=forward_stderr, args=(child.stderr,), daemon=True).start()
+    write_lock = threading.Lock()
+    input_stop = threading.Event()
+    threading.Thread(target=forward_input, args=(child, write_lock, input_stop), daemon=True).start()
     try:
-        return serve_child(child)
+        return serve_child(child, write_lock=write_lock, input_stop=input_stop)
     except KeyboardInterrupt:
         print("loader: interrupted; stopping WASM", file=sys.stderr, flush=True)
         return _reap_child(child)

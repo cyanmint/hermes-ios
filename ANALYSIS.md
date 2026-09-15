@@ -8,8 +8,8 @@
 
 最终运行时交付物只有：
 
-1. `hermes`：遵守标准 stdin/stdout frame 协议的 WASM runtime
-2. `loader.py`：后续用于宿主 capability broker 的 Python 程序
+1. `hermes.wasm`：直接的 WASM runtime，接受格式化输入并输出格式化 frame
+2. `loader.py`：宿主 capability broker，转接 frame 并分类 stdio、stderr、socket
 
 `ashell-debug-*` 仅负责通过 a-Shell 验证，不改变交付协议，也不替代协议测试。
 
@@ -29,6 +29,11 @@ stdout 也不能混入普通日志。`--version`、空参数启动和 `model` �
 
 ## overlay 规则
 
+WASI 编译器必须来自 a-Shell 定制 SDK，而不是 generic wasi-sdk：
+`https://github.com/holzschu/wasi-sdk.git` 的 `wasi-sdk-aShell-22`
+（commit `3d2154daab00d4479d855a661355566b2e393702`）。
+`build/fetch-ashell-wasi-sdk.sh` 负责递归下载、校验和安装该工具链。
+
 `overlay/python/` 是 WASI runtime 的覆盖层；它不依赖直接修改 CPython checkout。
 `overlay/hermes/` 和 `overlay/webui/` 分别覆盖 build-time 下载的上游源码。复制
 操作必须在构建阶段执行，目标文件不存在时应失败，避免拼写错误导致静默漏拷贝。
@@ -39,6 +44,6 @@ stdout 也不能混入普通日志。`--version`、空参数启动和 `model` �
 
 ## 不属于当前目标的内容
 
-当前不以 loader 透明执行、直接 wasm 命令输出、root SSH 或远程 CI 作为 `hermes`
-协议验收。它们可以作为诊断路径，但不能证明 stdin/stdout 协议正确。loader 的
-socket/TLS capability 和 a-Shell 实机测试在协议型 `hermes` 交付物稳定后再接入。
+当前不以裸 `wasm`/`wasmtime` 的终端文本输出作为 `hermes.wasm` 协议验收。loader
+负责把外部格式化输入送入 WASM、把 WASM 的格式化事件转发给外部，并代理 socket
+与 TLS capability；普通诊断始终走 stderr。
