@@ -206,16 +206,42 @@ def _dispatch(frame: dict[str, Any], sockets: dict[int, socket.socket]) -> dict[
     return _error(request_id, "CAPABILITY_UNAVAILABLE", "unsupported capability")
 
 
+def _reap_child(process: subprocess.Popen[bytes]) -> int:
+    """Stop a child that lost its RPC pipe and always reap it promptly."""
+    if process.poll() is None:
+        process.terminate()
+    try:
+        return process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        return process.wait()
+
+
 def serve_child(process: subprocess.Popen[bytes]) -> int:
     assert process.stdin is not None and process.stdout is not None
     sockets: dict[int, socket.socket] = {}
     while True:
-        frame = read_frame(process.stdout)
-        if frame is None:
+        try:
+            frame = read_frame(process.stdout)
+            if frame is None:
+                if process.poll() is None:
+                    print("loader: WASM stdout pipe closed unexpectedly", file=sys.stderr, flush=True)
+                break
+            response = _dispatch(frame, sockets)
+            if response is not None:
+                write_frame(process.stdin, response)
+        except LoaderError as exc:
+            print(f"loader: WASM protocol error [{exc.code}]: {exc.message}", file=sys.stderr, flush=True)
+            returncode = _reap_child(process)
             break
-        response = _dispatch(frame, sockets)
-        if response is not None: write_frame(process.stdin, response)
-    for sock in sockets.values(): sock.close()
+        except (BrokenPipeError, ConnectionResetError, OSError) as exc:
+            print(f"loader: WASM RPC pipe broken: {exc}", file=sys.stderr, flush=True)
+            returncode = _reap_child(process)
+            break
+    for sock in sockets.values():
+        sock.close()
+    if "returncode" in locals():
+        return returncode if returncode != 0 else 1
     return process.wait()
 
 
@@ -308,7 +334,11 @@ def main() -> int:
         stderr=subprocess.PIPE,
     )
     if any(arg in {"--version", "-V"} for arg in args):
-        stdout, stderr = child.communicate()
+        try:
+            stdout, stderr = child.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            print("loader: WASM --version timed out", file=sys.stderr, flush=True)
+            return _reap_child(child)
         sys.stdout.buffer.write(stdout)
         sys.stdout.buffer.flush()
         sys.stderr.buffer.write(stderr)
