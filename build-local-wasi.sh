@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+SOURCE_ROOT=${SOURCE_ROOT:-"$ROOT/build/sources"}
+if [ ! -d "$SOURCE_ROOT/hermes-agent/.git" ] || [ ! -d "$SOURCE_ROOT/hermes-webui/.git" ]; then
+  "$ROOT/build/fetch-sources.sh" "$SOURCE_ROOT"
+fi
+cp -a "$ROOT/overlay/hermes/." "$SOURCE_ROOT/hermes-agent/"
+cp -a "$ROOT/overlay/webui/." "$SOURCE_ROOT/hermes-webui/"
 rm -rf /root/hermes-build/loader-build
 mkdir -p /root/hermes-build/loader-build
 cd /root/hermes-build/cpython
@@ -46,3 +53,8 @@ python Tools/wasm/wasi.py configure-host --quiet -- \
   LIBSQLITE3_CFLAGS=-I/root/hermes-build/sqlite \
   LIBSQLITE3_LIBS=/root/hermes-build/sqlite/lib/libsqlite3.a
 python Tools/wasm/wasi.py make-host --quiet
+
+# Stage project-owned WASI Python files separately from the upstream CPython tree.
+PYTHON_OVERLAY_DEST=${PYTHON_OVERLAY_DEST:-/root/hermes-build/loader-artifact/lib/python3.13}
+mkdir -p "$PYTHON_OVERLAY_DEST"
+cp -a "$ROOT/overlay/python/." "$PYTHON_OVERLAY_DEST/"

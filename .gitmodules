@@ -1,6 +1,0 @@
-[submodule "hermes-agent"]
-	path = hermes-agent
-	url = https://github.com/NousResearch/hermes-agent.git
-[submodule "hermes-webui"]
-	path = hermes-webui
-	url = https://github.com/nesquena/hermes-webui.git
