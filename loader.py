@@ -350,15 +350,9 @@ def _build_command(artifact: Path, args: list[str]) -> list[str]:
         ]
     else:
         command = [wasm_command]
-    # a-Shell's bundled launcher requires the WASM entry path to be relative
-    # to its working directory; absolute sandbox paths make it terminate the
-    # hosting Python process before producing stderr. The module is CPython
-    # with Hermes installed in its runtime tree, so route CLI arguments to the
-    # Hermes module without introducing another executable wrapper.
-    hermes_args = list(args)
-    if not hermes_args:
-        hermes_args = ["--help"]
-    return [*command, artifact.name, "-m", "hermes_cli.main", *hermes_args]
+    # hermes.wasm owns the module dispatch and formatted stdio contract.
+    # loader.py only selects the host runner and forwards user arguments.
+    return [*command, artifact.name, *args]
 
 
 def main() -> int:
@@ -376,10 +370,14 @@ def main() -> int:
     # builds use lib/python3.13.  CPython imports encodings before sitecustomize
     # can adjust sys.path, so provide both layouts at process startup.
     runtime_root = _find_runtime_root(artifact)
+    # These values are interpreted inside the WASI guest, not by the host.
+    # Host paths such as W:/... or /mnt/w/... are invisible after --dir maps
+    # the runtime tree to guest /.  Keep the guest paths deterministic so the
+    # interpreter can find encodings before sitecustomize runs.
+    environment["PYTHONHOME"] = "/"
     environment["PYTHONPATH"] = os.pathsep.join(
-        (str(runtime_root / "python/Lib"), str(runtime_root / "lib/python3.13"),
-         "/python/Lib", "/lib/python3.13", environment.get("PYTHONPATH", ""))
-    ).rstrip(os.pathsep)
+        ("/python/Lib", "/python/site-packages", "/lib/python3.13")
+    )
     child = subprocess.Popen(
         command,
         cwd=str(artifact.parent),

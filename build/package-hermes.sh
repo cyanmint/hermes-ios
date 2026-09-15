@@ -31,6 +31,10 @@ cp -a "$SOURCE_ARTIFACT/python/." "$RUNTIME_ROOT/python/"
 cp -a "$ROOT/overlay/hermes/." "$RUNTIME_ROOT/python/site-packages/"
 rm -rf "$RUNTIME_ROOT/lib/python3.13/site-packages"
 cp -a "$ROOT/overlay/python/." "$RUNTIME_ROOT/lib/python3.13/"
+# The direct CPython entrypoint also searches the Python/Lib tree before
+# environment setup, so keep sitecustomize and wasi_loader in both supported
+# layouts.
+cp -a "$ROOT/overlay/python/." "$RUNTIME_ROOT/python/Lib/"
 
 printf 'built %s (%s bytes)\n' "$OUTPUT" "$(stat -c %s "$OUTPUT")"
 printf 'runtime support: %s\n' "$RUNTIME_ROOT"

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+unset PYTHONHOME PYTHONPATH
 SOURCE_ROOT=${SOURCE_ROOT:-"$ROOT/build/external"}
 if [ "${SKIP_SOURCE_FETCH:-0}" = 1 ]; then
   mkdir -p "$SOURCE_ROOT/hermes-agent" "$SOURCE_ROOT/hermes-webui"
@@ -15,11 +16,12 @@ cd /root/hermes-build/cpython
 git archive HEAD | tar -x -C /root/hermes-build/loader-build
 cp -a .git /root/hermes-build/loader-build/.git
 cd /root/hermes-build/loader-build
+mkdir -p Programs
+cp "$ROOT/overlay/cpython/Programs/python.c" Programs/python.c
 python -c 'from pathlib import Path; p=Path("configure"); s=p.read_text(); s=s.replace("--max-memory=10485760", "--max-memory=268435456").replace("--initial-memory=20971520", "--initial-memory=67108864"); p.write_text(s)'
 cp /root/hermes-build/sqlite/sqlite3.c /root/hermes-build/sqlite/sqlite3.h Modules/_sqlite/
 printf '%s\n' \
   '*disabled*' \
-  'zlib zlibmodule.c /root/hermes-build/zlib-wasi/libz.a' \
   '_socket socketmodule.c' \
   '_ssl _ssl.c' \
   '_sqlite3 _sqlite/blob.c _sqlite/connection.c _sqlite/cursor.c _sqlite/microprotocols.c _sqlite/module.c _sqlite/prepare_protocol.c _sqlite/row.c _sqlite/statement.c _sqlite/util.c _sqlite/sqlite3.c' \
@@ -46,15 +48,14 @@ clang --target=wasm32-wasi --sysroot="$WASI_SDK_PATH/share/wasi-sysroot" \
 llvm-ar rcs /root/hermes-build/sqlite/lib/libsqlite3.a /root/hermes-build/sqlite/sqlite3.o
 python Tools/wasm/wasi.py configure-build-python --clean --quiet -- \
   --config-cache --without-ensurepip \
-  py_cv_module__socket=n/a py_cv_module__ssl=n/a py_cv_module_zlib=yes \
-  ZLIB_CFLAGS=-I/root/hermes-build/zlib-1.3.1 ZLIB_LIBS=/root/hermes-build/zlib-wasi/libz.a \
+  py_cv_module__socket=n/a py_cv_module__ssl=n/a py_cv_module_zlib=n/a \
+  ZLIB_CFLAGS= ZLIB_LIBS= \
   LIBSQLITE3_LIBS=-lsqlite3
 python Tools/wasm/wasi.py make-build-python --quiet
-sed -i '/^zlib zlibmodule.c \/root\/hermes-build\/zlib-wasi\/libz.a$/d' Modules/Setup.local
 python Tools/wasm/wasi.py configure-host --quiet -- \
   --config-cache --without-ensurepip \
-  py_cv_module__socket=n/a py_cv_module__ssl=n/a py_cv_module_zlib=yes \
-  ZLIB_CFLAGS=-I/root/hermes-build/zlib-1.3.1 ZLIB_LIBS=/root/hermes-build/zlib-wasi/libz.a \
+  py_cv_module__socket=n/a py_cv_module__ssl=n/a py_cv_module_zlib=n/a \
+  ZLIB_CFLAGS= ZLIB_LIBS= \
   ac_cv_lib_sqlite3_sqlite3_bind_double=yes \
   ac_cv_lib_sqlite3_sqlite3_column_decltype=yes \
   ac_cv_lib_sqlite3_sqlite3_column_double=yes \

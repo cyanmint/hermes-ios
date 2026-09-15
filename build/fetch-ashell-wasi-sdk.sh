@@ -19,6 +19,14 @@ if [ ! -x "$PREFIX/bin/clang" ]; then
     *) printf 'unexpected a-Shell WASI SDK commit: %s\n' "$actual" >&2; exit 2 ;;
   esac
   env PREFIX="$PREFIX" make -C "$SOURCE"
+  staged="$SOURCE/build/install$PREFIX"
+  [ -x "$staged/bin/clang" ] || {
+    printf 'missing staged a-Shell SDK clang: %s\n' "$staged/bin/clang" >&2
+    exit 3
+  }
+  rm -rf "$PREFIX"
+  mkdir -p "$(dirname "$PREFIX")"
+  cp -a "$staged/." "$PREFIX/"
 fi
 
 actual=$(git -C "$SOURCE" rev-parse HEAD)
