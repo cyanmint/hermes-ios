@@ -366,17 +366,14 @@ def main() -> int:
         print(f"loader: {exc.message}", file=sys.stderr)
         return 2
     environment = os.environ.copy()
-    # The delivered a-Shell bundle historically used python/Lib, while newer
-    # builds use lib/python3.13.  CPython imports encodings before sitecustomize
-    # can adjust sys.path, so provide both layouts at process startup.
-    runtime_root = _find_runtime_root(artifact)
     # These values are interpreted inside the WASI guest, not by the host.
     # Host paths such as W:/... or /mnt/w/... are invisible after --dir maps
     # the runtime tree to guest /.  Keep the guest paths deterministic so the
     # interpreter can find encodings before sitecustomize runs.
     environment["PYTHONHOME"] = "/"
     environment["PYTHONPATH"] = os.pathsep.join(
-        ("/python/Lib", "/python/site-packages", "/lib/python3.13")
+        ("/hermes-runtime.zip/python/site-packages",
+         "/hermes-runtime.zip/lib/python3.13")
     )
     child = subprocess.Popen(
         command,

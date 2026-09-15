@@ -4,6 +4,7 @@ build/external/
 # Locally generated runtime delivery artifacts
 hermes.wasm
 /hermes-runtime/
+/hermes-runtime.zip
 /hermes
 __pycache__/
 tests/**/__pycache__/

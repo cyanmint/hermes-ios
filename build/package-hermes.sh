@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 SOURCE_ARTIFACT=${SOURCE_ARTIFACT:-/root/hermes-build/hermes-artifact}
 OUTPUT=${OUTPUT:-"$ROOT/hermes.wasm"}
-RUNTIME_ROOT=${RUNTIME_ROOT:-"$ROOT/hermes-runtime"}
+RUNTIME_ARCHIVE=${RUNTIME_ARCHIVE:-"$ROOT/hermes-runtime.zip"}
 
 SOURCE_WASM="$SOURCE_ARTIFACT/python.wasm"
 CPYTHON_SOURCE=${CPYTHON_SOURCE:-/root/hermes-build/loader-build}
@@ -17,9 +17,9 @@ copy_tree() {
 }
 
 STAGE_ROOT=$(mktemp -d /tmp/hermes-runtime.XXXXXX)
-STAGE_TAR=/tmp/hermes-runtime.${BASHPID}.tar
+STAGE_ZIP=/tmp/hermes-runtime.${BASHPID}.zip
 cleanup() {
-  rm -rf "$STAGE_ROOT" "$STAGE_TAR"
+  rm -rf "$STAGE_ROOT" "$STAGE_ZIP"
 }
 trap cleanup EXIT
 [ -f "$SOURCE_WASM" ] || {
@@ -39,40 +39,24 @@ chmod +x "$OUTPUT"
 
 # CPython still needs its standard library and project overlays at runtime.
 # Keep those support files separate from the two named delivery entrypoints.
-rm -rf "$RUNTIME_ROOT"
+rm -rf "$ROOT/hermes-runtime" "$RUNTIME_ARCHIVE"
 mkdir -p "$STAGE_ROOT/lib/python3.13" "$STAGE_ROOT/python"
 copy_tree "$SOURCE_ARTIFACT/lib" "$STAGE_ROOT/lib"
-if [ -d "$SOURCE_ARTIFACT/python/Lib" ]; then
-  copy_tree "$SOURCE_ARTIFACT/python" "$STAGE_ROOT/python"
-else
-  copy_tree "$SOURCE_ARTIFACT/python" "$STAGE_ROOT/python"
-  [ -d "$CPYTHON_SOURCE/Lib" ] || {
-    printf 'missing CPython standard library: %s\n' "$CPYTHON_SOURCE/Lib" >&2
-    exit 3
-  }
-  copy_tree "$CPYTHON_SOURCE/Lib" "$STAGE_ROOT/python/Lib"
-fi
+[ -d "$CPYTHON_SOURCE/Lib" ] || {
+  printf 'missing CPython standard library: %s\n' "$CPYTHON_SOURCE/Lib" >&2
+  exit 3
+}
+copy_tree "$CPYTHON_SOURCE/Lib" "$STAGE_ROOT/lib/python3.13"
 copy_tree "$ROOT/overlay/hermes" "$STAGE_ROOT/python/site-packages"
-rm -rf "$STAGE_ROOT/lib/python3.13/site-packages"
 copy_tree "$ROOT/overlay/python" "$STAGE_ROOT/lib/python3.13"
-# The direct CPython entrypoint also searches the Python/Lib tree before
-# environment setup, so keep sitecustomize and wasi_loader in both supported
-# layouts.
-copy_tree "$ROOT/overlay/python" "$STAGE_ROOT/python/Lib"
 
-# Avoid millions of WSL-to-Windows metadata writes.  Build the complete
-# archive in the WSL filesystem, copy one file across the boundary, then use
-# the native Windows tar implementation to extract it on the Windows volume.
-tar -cf "$STAGE_TAR" -C "$STAGE_ROOT" .
-RUNTIME_ARCHIVE="$RUNTIME_ROOT.tar"
-cp "$STAGE_TAR" "$RUNTIME_ARCHIVE"
-mkdir -p "$RUNTIME_ROOT"
-WINDOWS_TAR=/mnt/w/Windows/System32/tar.exe
-[ -x "$WINDOWS_TAR" ] || WINDOWS_TAR=/mnt/w/windows/system32/tar.exe
-"$WINDOWS_TAR" -xf "$(wslpath -w "$RUNTIME_ARCHIVE")" \
-  -C "$(wslpath -w "$RUNTIME_ROOT")"
-rm -f "$RUNTIME_ARCHIVE"
+# Build the complete zip in WSL and copy one file across the Windows
+# filesystem boundary.  The archive is also CPython's import path.
+# ZIP_STORED is intentional: the WASI build omits the zlib extension, while
+# CPython must import encodings from this archive before Python code starts.
+python3 -c 'import os, sys, zipfile; root, output = sys.argv[1:]; z = zipfile.ZipFile(output, "w", zipfile.ZIP_STORED); [(z.write(os.path.join(directory, name), os.path.relpath(os.path.join(directory, name), root), compress_type=zipfile.ZIP_STORED)) for directory, _, names in os.walk(root) for name in names]; z.close()' "$STAGE_ROOT" "$STAGE_ZIP"
+cp "$STAGE_ZIP" "$RUNTIME_ARCHIVE"
 
 printf 'built %s (%s bytes)\n' "$OUTPUT" "$(stat -c %s "$OUTPUT")"
-printf 'runtime support: %s\n' "$RUNTIME_ROOT"
+printf 'runtime archive: %s\n' "$RUNTIME_ARCHIVE"
 file "$OUTPUT"
