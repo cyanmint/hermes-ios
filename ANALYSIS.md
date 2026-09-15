@@ -3,7 +3,7 @@
 ## 交付边界
 
 本专案不把 `hermes-agent` 或 `hermes-webui` 当作 Git submodule。它们是构建输入，
-由 `build/fetch-sources.sh` 下载到 `build/sources/`，再接受本专案 `overlay/`
+由 `build/fetch-sources.sh` 下载到 `build/external/`，再接受本专案 `overlay/`
 覆盖。这样提交中只保留可审查的变更，不把上游完整工作树嵌入专案。
 
 最终运行时交付物只有：
@@ -33,7 +33,7 @@ stdout 也不能混入普通日志。`--version`、空参数启动和 `model` �
 `overlay/hermes/` 和 `overlay/webui/` 分别覆盖 build-time 下载的上游源码。复制
 操作必须在构建阶段执行，目标文件不存在时应失败，避免拼写错误导致静默漏拷贝。
 
-构建脚本必须记录实际使用的上游 commit 到 `build/sources/SOURCES`。修改上游版本
+构建脚本必须记录实际使用的上游 commit 到 `build/external/SOURCES`。修改上游版本
 时应显式更新 commit 环境变量或脚本默认值，并重新运行协议、语法和 WASM import
 检查。
 

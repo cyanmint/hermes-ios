@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-SOURCE_ROOT=${SOURCE_ROOT:-"$ROOT/build/sources"}
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+SOURCE_ROOT=${SOURCE_ROOT:-"$ROOT/build/external"}
 if [ ! -d "$SOURCE_ROOT/hermes-agent/.git" ] || [ ! -d "$SOURCE_ROOT/hermes-webui/.git" ]; then
   "$ROOT/build/fetch-sources.sh" "$SOURCE_ROOT"
 fi

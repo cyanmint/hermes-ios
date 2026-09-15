@@ -54,10 +54,10 @@ stdio 输出、stderr 和 socket 输出只能通过事件返回：
 ./build/fetch-sources.sh
 ```
 
-源码被固定提交下载到 `build/sources/`：
+源码被固定提交下载到 `build/external/`：
 
-- `build/sources/hermes-agent/`
-- `build/sources/hermes-webui/`
+- `build/external/hermes-agent/`
+- `build/external/hermes-webui/`
 
 本项目拥有的覆盖文件集中在：
 
@@ -73,7 +73,7 @@ stdio 输出、stderr 和 socket 输出只能通过事件返回：
 Wasmtime 和 SQLite 依赖后执行：
 
 ```sh
-bash build-local-wasi.sh
+bash build/build-local-wasi.sh
 ```
 
 构建脚本会先下载两个上游源码，再应用 overlay。最终 staging 时必须把
