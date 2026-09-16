@@ -436,6 +436,13 @@ def main() -> int:
         ("/hermes-runtime.zip/lib/python3.13/site-packages",
          "/hermes-runtime.zip/lib/python3.13")
     )
+    if args and args[0] == "webui":
+        # a-Shell exposes the directory containing the dispatched WASM as the
+        # writable working directory.  Avoid HOME/state locations that may be
+        # read-only inside the WASI sandbox.
+        environment.setdefault("HERMES_WEBUI_DEFAULT_WORKSPACE", "workspace")
+        environment.setdefault("HERMES_WEBUI_STATE_DIR", "webui-state")
+        environment.setdefault("HERMES_HOME", "hermes-home")
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     if interactive:
         environment["HERMES_INTERACTIVE"] = "1"
@@ -458,7 +465,8 @@ def main() -> int:
     # WASM dispatcher exit instead of waiting for a framed request that can
     # never arrive while the host is only asking for metadata.
     input_thread: threading.Thread | None = None
-    if args not in (["--version"], ["-V"]):
+    needs_input = args not in (["--version"], ["-V"]) and not (args and args[0] == "webui")
+    if needs_input:
         input_thread = threading.Thread(
             target=forward_input,
             args=(child, write_lock, input_stop),
