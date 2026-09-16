@@ -69,7 +69,20 @@ class SSLContext:
     verify_flags = property(lambda self: getattr(self, "_verify_flags", 0), lambda self, value: setattr(self, "_verify_flags", value))
     minimum_version = property(lambda self: getattr(self, "_minimum_version", PROTO_MINIMUM_SUPPORTED), lambda self, value: setattr(self, "_minimum_version", value))
     maximum_version = property(lambda self: getattr(self, "_maximum_version", PROTO_MAXIMUM_SUPPORTED), lambda self, value: setattr(self, "_maximum_version", value))
-    def _set_alpn_protocols(self, protocols): self.set_alpn_protocols(protocols)
+    def _set_alpn_protocols(self, protocols):
+        # Lib/ssl.py passes the native _ssl method a length-prefixed byte
+        # sequence, not the original list of strings.
+        data = bytes(protocols)
+        decoded = []
+        index = 0
+        while index < len(data):
+            length = data[index]
+            index += 1
+            if length == 0 or index + length > len(data):
+                raise SSLError("invalid ALPN protocol list")
+            decoded.append(data[index:index + length].decode("ascii"))
+            index += length
+        self.alpn_protocols = decoded
     def _wrap_socket(self, sock, server_side=False, server_hostname=None, owner=None, session=None):
         raw = __import__("_socket").socket(fileno=sock.fileno())
         wasi_loader.call("socket.start_tls", {"id": raw.fileno(), "server_side": server_side, "server_hostname": server_hostname, "verify_mode": self.verify_mode, "check_hostname": self.check_hostname})
