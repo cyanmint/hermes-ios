@@ -334,7 +334,7 @@ def _find_wasm_command() -> str:
             if name == "wasm":
                 try:
                     if Path(found).stat().st_size == 0:
-                        return name
+                        return "__ashell_direct_wasm__"
                 except OSError:
                     pass
             return found
@@ -344,7 +344,7 @@ def _find_wasm_command() -> str:
     if bundle_candidates:
         try:
             if bundle_candidates[0].stat().st_size == 0:
-                return "wasm"
+                return "__ashell_direct_wasm__"
         except OSError:
             pass
         return str(bundle_candidates[0])
@@ -366,6 +366,10 @@ def _build_command(artifact: Path, args: list[str]) -> list[str]:
         ]
     else:
         command = [wasm_command]
+    if wasm_command == "__ashell_direct_wasm__":
+        # a-Shell dispatches a path ending in .wasm directly; invoking its
+        # zero-byte `wasm` placeholder through Popen can block indefinitely.
+        return [f"./{artifact.name}", *args]
     # hermes.wasm owns the module dispatch and formatted stdio contract.
     # loader.py only selects the host runner and forwards user arguments.
     return [*command, artifact.name, *args]
