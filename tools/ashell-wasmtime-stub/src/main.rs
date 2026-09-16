@@ -53,7 +53,9 @@ fn main() -> Result<()> {
     let wasi = WasiCtxBuilder::new()
         .inherit_stdio()
         .args(&guest_args)
+        .initial_cwd("/")
         .preopened_dir(".", "/", FsPerms::ReadWrite)?
+        .preopened_dir(".", ".", FsPerms::ReadWrite)?
         .build_p1();
     let mut store = Store::new(&engine, wasi);
     let instance = linker.instantiate(&mut store, &module)?;

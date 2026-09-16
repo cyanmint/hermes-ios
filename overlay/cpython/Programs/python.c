@@ -61,8 +61,11 @@ main(int argc, char **argv)
         L"/cross-build/wasm32-wasip1/build/lib.wasi-wasm32-3.13",
         L"/lib/python3.13",
         L"/hermes-runtime/lib/python3.13",
+        L"/",
+        L"./",
         L"/hermesrt.zip",
         L"./hermesrt.zip",
+        L"hermesrt.zip",
     };
     for (size_t i = 0; i < sizeof(search_paths) / sizeof(search_paths[0]); ++i) {
         PyStatus path_status = PyWideStringList_Append(
