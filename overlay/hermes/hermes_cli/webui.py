@@ -27,8 +27,10 @@ def build_webui_parser(subparsers, *, cmd_webui):
 def cmd_webui(args):
     try:
         faulthandler.enable(file=sys.stderr, all_threads=True)
-    except (RuntimeError, OSError):
-        pass
+    except (AttributeError, OSError, RuntimeError, ValueError) as exc:
+        # a-Shell's framed stderr intentionally has no fileno().  Keep the
+        # structured startup logs working instead of failing before import.
+        _startup_log(f"faulthandler unavailable: {type(exc).__name__}: {exc}")
     _startup_log("cmd_webui entered")
     if args.host is not None:
         os.environ["HERMES_WEBUI_HOST"] = str(args.host)
