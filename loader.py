@@ -439,8 +439,16 @@ def main() -> int:
     threading.Thread(target=forward_stderr, args=(child.stderr,), daemon=True).start()
     write_lock = threading.Lock()
     input_stop = threading.Event()
-    input_thread = threading.Thread(target=forward_input, args=(child, write_lock, input_stop), daemon=True)
-    input_thread.start()
+    # Version queries are self-contained.  Closing stdin lets the a-Shell
+    # WASM dispatcher exit instead of waiting for a framed request that can
+    # never arrive while the host is only asking for metadata.
+    input_thread: threading.Thread | None = None
+    if args not in (["--version"], ["-V"]):
+        input_thread = threading.Thread(target=forward_input, args=(child, write_lock, input_stop), daemon=True)
+        input_thread.start()
+    else:
+        assert child.stdin is not None
+        child.stdin.close()
     try:
         return serve_child(child, write_lock=write_lock, input_stop=input_stop)
     except KeyboardInterrupt:
@@ -452,7 +460,8 @@ def main() -> int:
             sys.stdin.buffer.close()
         except (AttributeError, OSError, ValueError):
             pass
-        input_thread.join(timeout=2)
+        if input_thread is not None:
+            input_thread.join(timeout=2)
 
 
 if __name__ == "__main__":
