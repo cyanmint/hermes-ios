@@ -57,10 +57,15 @@ if [ -d "$HERMES_SOURCE/hermes_cli" ]; then
     [ -f "$module" ] || continue
     cp "$module" "$STAGE_ROOT/lib/python3.13/site-packages/"
   done
-  if [ -d "$HERMES_SOURCE/hermes" ]; then
-    copy_tree "$HERMES_SOURCE/hermes" "$STAGE_ROOT/lib/python3.13/site-packages/hermes"
-  fi
-  copy_tree "$HERMES_SOURCE/hermes_cli" "$STAGE_ROOT/lib/python3.13/site-packages/hermes_cli"
+  # The built artifact may contain an older copy of these packages.  Overlay
+  # every Hermes-owned runtime package from the pinned source checkout so
+  # imports cannot mix versions (for example agent.proxy_bypass and
+  # hermes_cli.main from different revisions).
+  for package in acp_adapter agent cron gateway hermes_cli plugins providers tools tui_gateway hermes; do
+    if [ -d "$HERMES_SOURCE/$package" ]; then
+      copy_tree "$HERMES_SOURCE/$package" "$STAGE_ROOT/lib/python3.13/site-packages/$package"
+    fi
+  done
 else
   printf 'missing Hermes Agent source: %s\n' "$HERMES_SOURCE/hermes_cli" >&2
   exit 4
