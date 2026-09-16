@@ -86,6 +86,9 @@ for module in bootstrap.py server.py mcp_server.py; do
   [ -f "$WEBUI_SOURCE/$module" ] && cp "$WEBUI_SOURCE/$module" "$STAGE_ROOT/lib/python3.13/$module"
 done
 copy_tree "$ROOT/overlay/python" "$STAGE_ROOT/lib/python3.13"
+# ``ssl.py`` imports the top-level ``_ssl`` module.  Keep it synchronized with
+# the maintained WASI facade instead of allowing a stale artifact copy to win.
+cp "$ROOT/overlay/python/wasi_runtime/_ssl.py" "$STAGE_ROOT/lib/python3.13/_ssl.py"
 
 # Build the complete zip in WSL and copy one file across the Windows
 # filesystem boundary.  The archive is also CPython's import path.
