@@ -5,6 +5,8 @@ import io
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
+import socket
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -38,6 +40,18 @@ class LoaderTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         body = base64.b64decode(result["result"]["body"]["data"])
         self.assertEqual(body, b"loader-ok")
+
+    def test_socket_bind_and_listen_dispatch(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sockets = {1: listener}
+            loader._socket_dispatch(sockets, {"method": "socket.bind", "id": 1, "host": "127.0.0.1", "port": 0})
+            loader._socket_dispatch(sockets, {"method": "socket.listen", "id": 1, "backlog": 1})
+            self.assertEqual(listener.getsockname()[0], "127.0.0.1")
+            self.assertGreater(listener.getsockname()[1], 0)
+        finally:
+            listener.close()
+
 
     def test_rejects_url_credentials(self):
         result = loader._request(7, {"url": "https://user:pass@example.test/"})

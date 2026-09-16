@@ -38,6 +38,14 @@ class socket:
     def connect(self, address):
         host, port = address[:2]
         wasi_loader.call("socket.connect", {"id": self._id, "host": host, "port": port, "timeout": self.timeout})
+    def bind(self, address):
+        host, port = address[:2]
+        wasi_loader.call("socket.bind", {"id": self._id, "host": host, "port": port})
+    def listen(self, backlog=0):
+        wasi_loader.call("socket.listen", {"id": self._id, "backlog": int(backlog)})
+    def accept(self):
+        result = wasi_loader.call("socket.accept", {"id": self._id, "timeout": self.timeout})
+        return socket(fileno=int(result["id"])), tuple(result["address"])
     def send(self, data, flags=0):
         return int(wasi_loader.call("socket.send", {"id": self._id, "data": {"encoding": "base64", "data": base64.b64encode(bytes(data)).decode("ascii")}, "flags": flags}).get("sent", 0))
     def sendall(self, data, flags=0):

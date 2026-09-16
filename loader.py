@@ -39,6 +39,7 @@ class LoaderError(Exception):
         self.message = message
 
 
+
 def read_frame(stream: BinaryIO) -> dict[str, Any] | None:
     header = stream.read(4)
     if not header:
@@ -149,6 +150,8 @@ def _request(request_id: Any, params: dict[str, Any]) -> dict[str, Any]:
 def _socket_dispatch(sockets: dict[int, socket.socket], params: dict[str, Any]) -> dict[str, Any]:
     method = params.get("method")
     sid = params.get("id")
+    if os.environ.get("HERMES_SOCKET_VERBOSE") == "1":
+        print(f"SOCKETBROKER_REQUEST method={method!r} id={sid!r} params={params!r}", file=sys.stderr, flush=True)
     if method == "socket.hostname":
         return {"name": socket.gethostname()}
     if method == "socket.resolve":
@@ -164,6 +167,16 @@ def _socket_dispatch(sockets: dict[int, socket.socket], params: dict[str, Any]) 
     sock = sockets[sid]
     if method == "socket.connect":
         sock.settimeout(params.get("timeout")); sock.connect((params["host"], params["port"])); return {}
+    if method == "socket.bind":
+        sock.bind((params["host"], params["port"])); return {}
+    if method == "socket.listen":
+        sock.listen(int(params.get("backlog", 0))); return {}
+    if method == "socket.accept":
+        sock.settimeout(params.get("timeout"))
+        connection, address = sock.accept()
+        accepted_id = max(sockets, default=0) + 1
+        sockets[accepted_id] = connection
+        return {"id": accepted_id, "address": list(address)}
     if method in {"socket.send", "socket.sendall"}:
         data = base64.b64decode(params["data"]["data"], validate=True)
         if len(data) > MAX_SOCKET_BUFFER: raise LoaderError("REQUEST_TOO_LARGE", "socket write is too large")
@@ -423,6 +436,7 @@ def main() -> int:
     # loader.py is the host-side frame broker; hermes.wasm is the direct WASM
     # delivery artifact and never gets replaced by a shell launcher.
     args = sys.argv[1:]
+
     try:
         artifact = _find_artifact()
         command = _build_command(artifact, args)
@@ -457,6 +471,8 @@ def main() -> int:
     if args and args[0] == "webui":
         environment.setdefault("HERMES_WEBUI_DEFAULT_WORKSPACE", "workspace")
         environment.setdefault("HERMES_WEBUI_STATE_DIR", "webui-state")
+    if args and args[0] == "sockettest":
+        environment.setdefault("HERMES_SOCKET_VERBOSE", "1")
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     if interactive:
         environment["HERMES_INTERACTIVE"] = "1"
@@ -481,7 +497,7 @@ def main() -> int:
     # never arrive while the host is only asking for metadata.
     input_thread: threading.Thread | None = None
     needs_input = args not in (["--version"], ["-V"]) and not (args and args[0] == "webui")
-    if needs_input:
+    if needs_input and interactive:
         input_thread = threading.Thread(
             target=forward_input,
             args=(child, write_lock, input_stop),
@@ -489,6 +505,12 @@ def main() -> int:
             daemon=True,
         )
         input_thread.start()
+    elif needs_input:
+        # asdbd and redirected diagnostics are non-interactive.  Do not spend
+        # a WASI thread forwarding an input stream that cannot provide input;
+        # EOF lets the CLI complete help/version-style probes cleanly.
+        assert child.stdin is not None
+        child.stdin.close()
     elif args in (["--version"], ["-V"]):
         assert child.stdin is not None
         child.stdin.close()

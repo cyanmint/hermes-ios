@@ -351,6 +351,7 @@ from hermes_cli.subcommands.update import build_update_parser
 from hermes_cli.subcommands.uninstall import build_uninstall_parser
 from hermes_cli.subcommands.dashboard import build_dashboard_parser, build_serve_parser
 from hermes_cli.webui import build_webui_parser, cmd_webui
+from hermes_cli.sockettest import build_sockettest_parser
 from hermes_cli.subcommands.gui import build_gui_parser
 from hermes_cli.subcommands.logs import build_logs_parser
 from hermes_cli.subcommands.prompt_size import build_prompt_size_parser
@@ -3303,6 +3304,7 @@ def _build_cli_parser():
         cmd_dashboard_register=cmd_dashboard_register,
     )
     build_webui_parser(subparsers, cmd_webui=cmd_webui)
+    build_sockettest_parser(subparsers)
     # "desktop" is canonical (Hermes-Setup.exe tells users to run it, so it
     # must be the name --help shows); "gui" is a deprecated alias.
     build_gui_parser(subparsers, cmd_gui=cmd_gui)
