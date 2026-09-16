@@ -9,6 +9,7 @@ RUNTIME_ARCHIVE=${RUNTIME_ARCHIVE:-"$ROOT/hermes-runtime.zip"}
 SOURCE_WASM="$SOURCE_ARTIFACT/python.wasm"
 CPYTHON_SOURCE=${CPYTHON_SOURCE:-/root/hermes-build/loader-build}
 HERMES_SOURCE=${HERMES_SOURCE:-"$ROOT/build/external/hermes-agent"}
+WEBUI_SOURCE=${WEBUI_SOURCE:-"$ROOT/build/external/hermes-webui"}
 
 copy_tree() {
   local source=$1
@@ -30,6 +31,10 @@ trap cleanup EXIT
 [ "$(od -An -tx1 -N4 "$SOURCE_WASM" | tr -d ' \n')" = "0061736d" ] || {
   printf 'source artifact is not a raw WASM module: %s\n' "$SOURCE_WASM" >&2
   exit 2
+}
+[ -f "$WEBUI_SOURCE/server.py" ] && [ -d "$WEBUI_SOURCE/api" ] && [ -d "$WEBUI_SOURCE/static" ] || {
+  printf 'missing Hermes WebUI source: %s\n' "$WEBUI_SOURCE" >&2
+  exit 5
 }
 
 # Delivery 1 is the WASM module itself. It must never be replaced by a shell
@@ -71,6 +76,11 @@ else
   exit 4
 fi
 copy_tree "$ROOT/overlay/hermes" "$STAGE_ROOT/lib/python3.13/site-packages"
+copy_tree "$WEBUI_SOURCE/api" "$STAGE_ROOT/lib/python3.13/api"
+copy_tree "$WEBUI_SOURCE/static" "$STAGE_ROOT/lib/python3.13/static"
+for module in bootstrap.py server.py mcp_server.py; do
+  [ -f "$WEBUI_SOURCE/$module" ] && cp "$WEBUI_SOURCE/$module" "$STAGE_ROOT/lib/python3.13/$module"
+done
 copy_tree "$ROOT/overlay/python" "$STAGE_ROOT/lib/python3.13"
 
 # Build the complete zip in WSL and copy one file across the Windows
