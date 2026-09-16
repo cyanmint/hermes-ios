@@ -328,11 +328,25 @@ def _find_wasm_command() -> str:
     for name in ("wasm", "wasmtime"):
         found = shutil.which(name)
         if found:
+            # a-Shell exposes `wasm` as an app-dispatched command.  Its PATH
+            # entry is a zero-byte placeholder, not an executable that can be
+            # passed as an absolute path to Popen.
+            if name == "wasm":
+                try:
+                    if Path(found).stat().st_size == 0:
+                        return name
+                except OSError:
+                    pass
             return found
     # a-Shell does not put its bundled launcher on PATH.  The application UUID
     # changes between installs, so discover it rather than hard-coding one.
     bundle_candidates = sorted(Path("/private/var/containers/Bundle/Application").glob("*/a-Shell.app/bin/wasm"))
     if bundle_candidates:
+        try:
+            if bundle_candidates[0].stat().st_size == 0:
+                return "wasm"
+        except OSError:
+            pass
         return str(bundle_candidates[0])
     raise LoaderError(
         "WASM_COMMAND_NOT_FOUND",
