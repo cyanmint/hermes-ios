@@ -89,6 +89,101 @@ copy_tree "$ROOT/overlay/python" "$STAGE_ROOT/lib/python3.13"
 # ``ssl.py`` imports the top-level ``_ssl`` module.  Keep it synchronized with
 # the maintained WASI facade instead of allowing a stale artifact copy to win.
 cp "$ROOT/overlay/python/wasi_runtime/_ssl.py" "$STAGE_ROOT/lib/python3.13/_ssl.py"
+# CPython's WASI importlib.metadata cannot discover nested dist-info entries
+# inside the runtime ZIP.  prompt_toolkit imports its version at module import
+# time, so replace that metadata lookup with the version from the staged
+# dist-info record while preserving the upstream package source.
+PROMPT_TOOLKIT_INIT="$STAGE_ROOT/lib/python3.13/site-packages/prompt_toolkit/__init__.py"
+if [ -f "$PROMPT_TOOLKIT_INIT" ]; then
+  python3 - "$STAGE_ROOT/lib/python3.13/site-packages" "$PROMPT_TOOLKIT_INIT" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+site_packages = Path(sys.argv[1])
+init_path = Path(sys.argv[2])
+metadata_path = next(site_packages.glob("prompt_toolkit-*.dist-info/METADATA"), None)
+if metadata_path is None:
+    raise SystemExit("missing prompt_toolkit dist-info metadata")
+metadata = metadata_path.read_text(encoding="utf-8")
+match = re.search(r"^Version:\s*(\S+)\s*$", metadata, re.MULTILINE)
+if match is None:
+    raise SystemExit("missing prompt_toolkit version metadata")
+version = match.group(1)
+source = init_path.read_text(encoding="utf-8")
+old = '__version__ = metadata.version("prompt_toolkit")'
+new = f'__version__ = {version!r}'
+if old not in source:
+    raise SystemExit("unexpected prompt_toolkit __init__.py")
+init_path.write_text(source.replace(old, new), encoding="utf-8", newline="\n")
+PY
+fi
+# The a-Shell WASI process has a small thread budget.  Avoid optional Hermes
+# background workers during CLI startup; the interactive command itself stays
+# synchronous and does not need these maintenance threads.
+python3 - "$STAGE_ROOT/lib/python3.13/site-packages/hermes_cli/main.py" "$STAGE_ROOT/lib/python3.13/site-packages/cli.py" "$STAGE_ROOT/lib/python3.13/site-packages/hermes_cli/cli_info_mixin.py" "$STAGE_ROOT/lib/python3.13/site-packages/prompt_toolkit/patch_stdout.py" "$STAGE_ROOT/lib/python3.13/site-packages/hermes_cli/cli_status_bar_mixin.py" <<'PY'
+import sys
+from pathlib import Path
+
+main_path, cli_path, info_path, patch_stdout_path, status_path = map(Path, sys.argv[1:])
+main = main_path.read_text(encoding="utf-8")
+old_main = "    if not _is_tui_chat_launch(args):\n"
+new_main = "    if not _is_tui_chat_launch(args) and os.environ.get(\"HERMES_DISABLE_BACKGROUND_DISCOVERY\") != \"1\":\n"
+if old_main not in main:
+    raise SystemExit("unexpected hermes_cli.main startup block")
+main_path.write_text(main.replace(old_main, new_main, 1), encoding="utf-8", newline="\n")
+
+cli = cli_path.read_text(encoding="utf-8")
+old_prewarm = '            threading.Thread(target=_prewarm_agent_runtime, name="agent-runtime-prewarm", daemon=True).start()\n'
+new_prewarm = '            if os.environ.get("HERMES_DISABLE_STARTUP_PREWARM") != "1":\n                threading.Thread(target=_prewarm_agent_runtime, name="agent-runtime-prewarm", daemon=True).start()\n'
+if old_prewarm not in cli:
+    raise SystemExit("unexpected startup prewarm block")
+cli = cli.replace(old_prewarm, new_prewarm, 1)
+old_banner = "                threading.Thread(\n                    target=_refresh_banner_snapshot, name=\"banner-snapshot-refresh\", daemon=True,\n                ).start()\n"
+new_banner = "                if os.environ.get(\"HERMES_DISABLE_STARTUP_PREWARM\") != \"1\":\n                    threading.Thread(\n                        target=_refresh_banner_snapshot, name=\"banner-snapshot-refresh\", daemon=True,\n                    ).start()\n"
+info = info_path.read_text(encoding="utf-8")
+if old_banner not in info:
+    raise SystemExit("unexpected banner snapshot thread block")
+info_path.write_text(info.replace(old_banner, new_banner, 1), encoding="utf-8", newline="\n")
+old_cli = '    threading.Thread(target=auto_prune_from_config, name="checkpoint-auto-prune", daemon=True).start()\n'
+new_cli = '    if os.environ.get("HERMES_DISABLE_BACKGROUND_CHECKPOINTS") != "1":\n        threading.Thread(target=auto_prune_from_config, name="checkpoint-auto-prune", daemon=True).start()\n'
+if old_cli not in cli:
+    raise SystemExit("unexpected checkpoint maintenance block")
+cli = cli.replace(old_cli, new_cli, 1)
+import re
+for thread_name, label in [
+    ("_tui_spinner_loop", "HERMES_DISABLE_TUI_SPINNER"),
+    ("_tui_process_loop", "HERMES_DISABLE_TUI_THREADS"),
+]:
+    pattern = rf'(?m)^(?P<indent>\s*)threading\.Thread\(target=self\.{re.escape(thread_name)}, daemon=True\)\.start\(\)\s*$'
+    replacement = rf'\g<indent>if os.environ.get("{label}") != "1":\n\g<indent>    threading.Thread(target=self.{thread_name}, daemon=True).start()'
+    cli, count = re.subn(pattern, replacement, cli, count=1)
+    if count != 1:
+        raise SystemExit(f"unexpected TUI thread block: {thread_name}")
+pattern = r'(?m)^(?P<indent>\s*)threading\.Thread\(target=self\._tui_wake_startup, daemon=True, name="wake-startup"\)\.start\(\)\s*$'
+replacement = r'\g<indent>if os.environ.get("HERMES_DISABLE_TUI_THREADS") != "1":\n\g<indent>    threading.Thread(target=self._tui_wake_startup, daemon=True, name="wake-startup").start()'
+cli, count = re.subn(pattern, replacement, cli, count=1)
+if count != 1:
+    raise SystemExit("unexpected TUI wake thread block")
+cli_path.write_text(cli, encoding="utf-8", newline="\n")
+patch_stdout = patch_stdout_path.read_text(encoding="utf-8")
+old_flush_start = "        thread.start()\n        return thread\n"
+new_flush_start = "        try:\n            thread.start()\n        except RuntimeError:\n            class _NoopThread:\n                def join(self):\n                    return None\n            return _NoopThread()\n        return thread\n"
+if old_flush_start not in patch_stdout:
+    raise SystemExit("unexpected prompt_toolkit flush thread block")
+patch_stdout_path.write_text(patch_stdout.replace(old_flush_start, new_flush_start, 1), encoding="utf-8", newline="\n")
+status = status_path.read_text(encoding="utf-8")
+old_pet_start = "        self._pet_anim_thread.start()\n"
+new_pet_start = "        try:\n            self._pet_anim_thread.start()\n        except RuntimeError:\n            self._pet_anim_thread = None\n"
+if old_pet_start not in status:
+    raise SystemExit("unexpected pet animation startup block")
+status = status.replace(old_pet_start, new_pet_start, 1)
+old_pet_join = "        if thread is not None:\n            thread.join(timeout=0.3)\n"
+new_pet_join = "        if thread is not None:\n            try:\n                thread.join(timeout=0.3)\n            except RuntimeError:\n                pass\n"
+if old_pet_join not in status:
+    raise SystemExit("unexpected pet animation cleanup block")
+status_path.write_text(status.replace(old_pet_join, new_pet_join, 1), encoding="utf-8", newline="\n")
+PY
 
 # Build the complete zip in WSL and copy one file across the Windows
 # filesystem boundary.  The archive is also CPython's import path.

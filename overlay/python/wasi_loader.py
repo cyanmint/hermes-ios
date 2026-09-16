@@ -114,6 +114,11 @@ def install_stdio() -> None:
         def isatty(self) -> bool:
             return _interactive
 
+        def fileno(self) -> int:
+            # prompt_toolkit uses the descriptor only to register/read the
+            # WASI-backed stdin; fd 0 is the loader's stdin endpoint.
+            return 0
+
         @property
         def encoding(self) -> str:
             return "utf-8"

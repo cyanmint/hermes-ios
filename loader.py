@@ -440,13 +440,23 @@ def main() -> int:
         (f"/{runtime_archive}/lib/python3.13/site-packages",
          f"/{runtime_archive}/lib/python3.13")
     )
+    # a-Shell exposes the directory containing the dispatched WASM as the
+    # writable working directory.  The inherited HOME points at the app
+    # container, which is not writable by the shell process; every Hermes
+    # command (not only WebUI) must use a relative writable state directory.
+    environment.setdefault("HERMES_HOME", "hermes-home")
+    # The a-Shell WASI process has a small thread budget.  Keep optional
+    # startup maintenance synchronous/disabled so the interactive CLI does
+    # not fail before it can accept a command.
+    environment.setdefault("HERMES_DISABLE_BACKGROUND_DISCOVERY", "1")
+    environment.setdefault("HERMES_DISABLE_BACKGROUND_CHECKPOINTS", "1")
+    environment.setdefault("HERMES_DISABLE_STARTUP_PREWARM", "1")
+    environment.setdefault("HERMES_DEFER_AGENT_STARTUP", "1")
+    environment.setdefault("HERMES_DISABLE_TUI_SPINNER", "1")
+    environment.setdefault("HERMES_DISABLE_TUI_THREADS", "1")
     if args and args[0] == "webui":
-        # a-Shell exposes the directory containing the dispatched WASM as the
-        # writable working directory.  Avoid HOME/state locations that may be
-        # read-only inside the WASI sandbox.
         environment.setdefault("HERMES_WEBUI_DEFAULT_WORKSPACE", "workspace")
         environment.setdefault("HERMES_WEBUI_STATE_DIR", "webui-state")
-        environment.setdefault("HERMES_HOME", "hermes-home")
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     if interactive:
         environment["HERMES_INTERACTIVE"] = "1"
