@@ -263,7 +263,7 @@ def server_main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--max-bytes", type=int, default=256 * 1024 * 1024)
+    parser.add_argument("--max-bytes", type=int, default=512 * 1024 * 1024)
     parser.add_argument(
         "-v",
         "--verbose",
