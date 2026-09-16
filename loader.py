@@ -458,7 +458,8 @@ def main() -> int:
         stderr=subprocess.PIPE,
     )
     assert child.stderr is not None
-    threading.Thread(target=forward_stderr, args=(child.stderr,), daemon=True).start()
+    stderr_thread = threading.Thread(target=forward_stderr, args=(child.stderr,), daemon=False)
+    stderr_thread.start()
     write_lock = threading.Lock()
     input_stop = threading.Event()
     # Version queries are self-contained.  Closing stdin lets the a-Shell
@@ -482,7 +483,13 @@ def main() -> int:
         # pipe open for capability-broker responses (HTTP/TLS/socket events).
         pass
     try:
-        return serve_child(child, write_lock=write_lock, input_stop=input_stop)
+        returncode = serve_child(child, write_lock=write_lock, input_stop=input_stop)
+        if args and args[0] == "webui":
+            if returncode != 0:
+                print(f"loader: WebUI WASM exited with status {returncode}", file=sys.stderr, flush=True)
+            else:
+                print("loader: WebUI WASM exited before serving", file=sys.stderr, flush=True)
+        return returncode
     except KeyboardInterrupt:
         print("loader: interrupted; stopping WASM", file=sys.stderr, flush=True)
         return _reap_child(child)
@@ -491,6 +498,7 @@ def main() -> int:
 
         if input_thread is not None:
             input_thread.join(timeout=2)
+        stderr_thread.join(timeout=2)
 
 
 if __name__ == "__main__":
