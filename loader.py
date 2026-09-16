@@ -449,7 +449,7 @@ def main() -> int:
     # the runtime tree to guest /.  Keep the guest paths deterministic so the
     # interpreter can find encodings before sitecustomize runs.
     environment["PYTHONHOME"] = "/"
-    runtime_archive = os.environ.get("HERMES_RUNTIME_ARCHIVE", "hermes-runtime.zip")
+    runtime_archive = os.environ.get("HERMES_RUNTIME_ARCHIVE", "hermesrt.zip")
     environment["PYTHONPATH"] = os.pathsep.join(
         (f"/{runtime_archive}/lib/python3.13/site-packages",
          f"/{runtime_archive}/lib/python3.13")

@@ -36,7 +36,7 @@ W:/_/hermes-ios
 loader.py
 asdbd.py
 hermes.wasm
-hermes-runtime.zip
+hermesrt.zip
 overlay/hermes/hermes_cli/webui.py
 build/build-local-wasi.sh
 build/package-hermes.sh
@@ -132,7 +132,7 @@ CPYTHON_SOURCE=/root/hermes-build/loader-build \
 
 ```sh
 python -c 'from pathlib import Path; p=Path("hermes.wasm"); assert p.read_bytes()[:4] == bytes.fromhex("0061736d"); print(p.stat().st_size)'
-unzip -t hermes-runtime.zip
+unzip -t hermesrt.zip
 ```
 
 还要检查 runtime 中存在 `encodings/`、`hermes_cli/`、`openai/`、`wasi_runtime/__init__.py` 及真实 zlib 相关符号/模块。
@@ -201,7 +201,7 @@ loader 支持选择 runtime archive：
 HERMES_RUNTIME_ARCHIVE=...
 ```
 
-但 CPython/WASI 启动早期仍可能依赖固定的 `hermes-runtime.zip` 路径。设备调试时优先把已验证的 runtime 放回固定文件名。
+但 CPython/WASI 启动早期仍可能依赖固定的 `hermesrt.zip` 路径。设备调试时优先把已验证的 runtime 放回固定文件名。
 
 ## 7. 当前设备部署方式
 
@@ -237,7 +237,7 @@ uv tool run pymobiledevice3 --no-color apps push \
 
 uv tool run pymobiledevice3 --no-color apps push \
   --documents AsheKube.app.a-Shell \
-  hermes-runtime.zip Documents/hermes-runtime.zip
+  hermesrt.zip Documents/hermesrt.zip
 ```
 
 使用 `--documents` 时把目标写成根路径会触发 AFC status 10；必须使用 `Documents/<name>`。
@@ -246,7 +246,7 @@ uv tool run pymobiledevice3 --no-color apps push \
 
 ```sh
 python asdbd.py --client exec --cwd . -- \
-  stat -f '%Su:%Sg %p %z %N' loader.py hermes.wasm hermes-runtime.zip
+  stat -f '%Su:%Sg %p %z %N' loader.py hermes.wasm hermesrt.zip
 ```
 
 目标通常为：
@@ -406,7 +406,7 @@ Ran 11 tests / OK
 - 先确认 iPad 已恢复并且 asdbd 控制通道可用。
 - 先执行最小 `asdbd_alive` 探针。
 - 检查远端文件权限、大小和 runtime 路径。
-- 使用固定 `hermes-runtime.zip`，避免启动早期找不到 `encodings`。
+- 使用固定 `hermesrt.zip`，避免启动早期找不到 `encodings`。
 - 使用 bounded timeout 和明确日志文件。
 - 测试失败后通过 `pymobiledevice3` 回读日志，再决定是否修改代码。
 - 不要在没有新设备 traceback 的情况下猜测新的 Hermes 根因。

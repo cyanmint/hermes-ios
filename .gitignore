@@ -5,6 +5,7 @@ build/external/
 hermes.wasm
 /hermes-runtime/
 /hermes-runtime.zip
+/hermesrt.zip
 /hermes
 __pycache__/
 tests/**/__pycache__/
