@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any, BinaryIO
 
 PROTOCOL_VERSION = 1
-MAX_FRAME = 4 * 1024 * 1024
+MAX_FRAME = 16 * 1024 * 1024
 MAX_REQUEST_BODY = 2 * 1024 * 1024
 MAX_RESPONSE_BODY = 8 * 1024 * 1024
 DEFAULT_TIMEOUT = 30.0

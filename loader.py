@@ -22,7 +22,9 @@ import urllib.parse
 import urllib.request
 from typing import Any, BinaryIO
 
-MAX_FRAME = 4 * 1024 * 1024
+# JSON framing includes base64 expansion; keep this larger than the bounded
+# request/response bodies while retaining a hard protocol allocation limit.
+MAX_FRAME = 16 * 1024 * 1024
 MAX_REQUEST_BODY = 2 * 1024 * 1024
 MAX_RESPONSE_BODY = 8 * 1024 * 1024
 MAX_SOCKET_BUFFER = 1024 * 1024

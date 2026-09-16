@@ -16,6 +16,7 @@ _rpc_stdin = sys.stdin.buffer
 _rpc_stdout = sys.stdout.buffer
 _input_buffer = bytearray()
 _input_eof = False
+MAX_FRAME = 16 * 1024 * 1024
 
 
 def _read_exact(size: int) -> bytes:
@@ -27,7 +28,7 @@ def _read_exact(size: int) -> bytes:
 
 def _read_message() -> dict[str, Any]:
     size = int.from_bytes(_read_exact(4), "big")
-    if size > 4 * 1024 * 1024:
+    if size > MAX_FRAME:
         raise RuntimeError("input frame is too large")
     value = json.loads(_read_exact(size).decode("utf-8"))
     if not isinstance(value, dict):
