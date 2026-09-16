@@ -496,7 +496,7 @@ def main() -> int:
     # WASM dispatcher exit instead of waiting for a framed request that can
     # never arrive while the host is only asking for metadata.
     input_thread: threading.Thread | None = None
-    needs_input = args not in (["--version"], ["-V"]) and not (args and args[0] == "webui")
+    needs_input = args not in (["--version"], ["-V"])
     if needs_input and interactive:
         input_thread = threading.Thread(
             target=forward_input,
@@ -506,17 +506,16 @@ def main() -> int:
         )
         input_thread.start()
     elif needs_input:
-        # asdbd and redirected diagnostics are non-interactive.  Do not spend
-        # a WASI thread forwarding an input stream that cannot provide input;
-        # EOF lets the CLI complete help/version-style probes cleanly.
-        assert child.stdin is not None
-        child.stdin.close()
+        # Every non-version runtime command may use the same stdin pipe for
+        # capability-broker responses (socket/TLS/network).  Keep it open;
+        # only a real TTY gets a separate host-input forwarding thread.
+        pass
     elif args in (["--version"], ["-V"]):
         assert child.stdin is not None
         child.stdin.close()
     else:
-        # WebUI has no user-input forwarding thread, but it still needs this
-        # pipe open for capability-broker responses (HTTP/TLS/socket events).
+        # Version queries close stdin above; all other commands keep this pipe
+        # open for capability-broker responses.
         pass
     try:
         returncode = serve_child(child, write_lock=write_lock, input_stop=input_stop)
