@@ -11,10 +11,11 @@ import base64
 import json
 import os
 from pathlib import Path
+import select
+import shlex
+import shutil
 import socket
 import ssl
-import shutil
-import shlex
 import subprocess
 import sys
 import threading
@@ -287,6 +288,9 @@ def forward_input(process: subprocess.Popen[bytes], write_lock: threading.Lock, 
     try:
         while not stop.is_set():
             if interactive:
+                ready, _, _ = select.select([sys.stdin.buffer], [], [], 0.2)
+                if not ready:
+                    continue
                 data = sys.stdin.buffer.read(4096)
                 frame = {"type": "input", "stream": "stdin", "data": {"encoding": "base64", "data": base64.b64encode(data).decode("ascii")}}
                 if not data:
