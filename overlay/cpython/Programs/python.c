@@ -63,14 +63,6 @@ main(int argc, char **argv)
         L"/hermes-runtime/lib/python3.13",
         L"/hermesrt.zip",
         L"./hermesrt.zip",
-        L"/hermesrt.zip/lib/python3.13",
-        L"/hermesrt.zip/lib/python3.13/site-packages",
-        L"./lib/python3.13",
-        L"./lib/python3.13/site-packages",
-        L"hermesrt.zip/lib/python3.13",
-        L"hermesrt.zip/lib/python3.13/site-packages",
-        L"./hermesrt.zip/lib/python3.13",
-        L"./hermesrt.zip/lib/python3.13/site-packages",
     };
     for (size_t i = 0; i < sizeof(search_paths) / sizeof(search_paths[0]); ++i) {
         PyStatus path_status = PyWideStringList_Append(

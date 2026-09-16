@@ -451,8 +451,7 @@ def main() -> int:
     environment["PYTHONHOME"] = "/"
     runtime_archive = os.environ.get("HERMES_RUNTIME_ARCHIVE", "hermesrt.zip")
     environment["PYTHONPATH"] = os.pathsep.join(
-        (f"/{runtime_archive}/lib/python3.13/site-packages",
-         f"/{runtime_archive}/lib/python3.13")
+        (f"/{runtime_archive}",)
     )
     # a-Shell exposes the directory containing the dispatched WASM as the
     # writable working directory.  The inherited HOME points at the app

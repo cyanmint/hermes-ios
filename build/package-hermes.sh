@@ -184,7 +184,32 @@ PY
 # filesystem boundary.  The archive is also CPython's import path.
 # ZIP_STORED keeps startup independent of archive decompression; zlib is also
 # linked into the WASM for Python's runtime compression APIs.
-python3 -c 'import os, sys, zipfile; root, output = sys.argv[1:]; z = zipfile.ZipFile(output, "w", zipfile.ZIP_STORED); [(z.write(os.path.join(directory, name), os.path.relpath(os.path.join(directory, name), root), compress_type=zipfile.ZIP_STORED)) for directory, _, names in os.walk(root) for name in names]; z.close()' "$STAGE_ROOT" "$STAGE_ZIP"
+python3 - "$STAGE_ROOT" "$STAGE_ZIP" <<'PY'
+import os
+import sys
+import zipfile
+
+root, output = sys.argv[1:]
+prefixes = ("lib/python3.13/site-packages/", "lib/python3.13/")
+targets = {}
+for directory, _, names in os.walk(root):
+    for name in names:
+        source = os.path.join(directory, name)
+        relative = os.path.relpath(source, root).replace(os.sep, "/")
+        target = relative
+        for prefix in prefixes:
+            if relative.startswith(prefix):
+                target = relative[len(prefix):]
+                break
+        previous = targets.get(target)
+        if previous is not None:
+            raise SystemExit(f"runtime archive path collision: {target}: {previous} and {source}")
+        targets[target] = source
+
+with zipfile.ZipFile(output, "w", zipfile.ZIP_STORED) as archive:
+    for target, source in sorted(targets.items()):
+        archive.write(source, target, compress_type=zipfile.ZIP_STORED)
+PY
 cp "$STAGE_ZIP" "$RUNTIME_ARCHIVE"
 
 printf 'built %s (%s bytes)\n' "$OUTPUT" "$(stat -c %s "$OUTPUT")"
