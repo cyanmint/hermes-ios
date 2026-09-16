@@ -48,7 +48,9 @@ copy_tree "$SOURCE_ARTIFACT/lib" "$STAGE_ROOT/lib"
   exit 3
 }
 copy_tree "$CPYTHON_SOURCE/Lib" "$STAGE_ROOT/lib/python3.13"
-rm -rf "$STAGE_ROOT/lib/python3.13/site-packages"
+# Keep the complete site-packages tree from the built runtime.  It contains
+# Hermes' bundled dependencies; deleting it here leaves only the small set of
+# source files copied below and produces a deceptively valid but unusable ZIP.
 mkdir -p "$STAGE_ROOT/lib/python3.13/site-packages"
 if [ -d "$HERMES_SOURCE/hermes_cli" ]; then
   for module in "$HERMES_SOURCE"/*.py; do
