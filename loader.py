@@ -14,6 +14,7 @@ from pathlib import Path
 import socket
 import ssl
 import shutil
+import shlex
 import subprocess
 import sys
 import threading
@@ -230,6 +231,8 @@ def serve_child(
             if frame is None:
                 if process.poll() is None:
                     print("loader: WASM stdout pipe closed unexpectedly", file=sys.stderr, flush=True)
+                else:
+                    returncode = process.wait()
                 break
             if frame.get("type") == "event":
                 # Accept the old internal name from already-built WASM images,
@@ -395,9 +398,12 @@ def main() -> int:
         ("/hermes-runtime.zip/lib/python3.13/site-packages",
          "/hermes-runtime.zip/lib/python3.13")
     )
+    ashell_shell_dispatch = bool(command and command[0].startswith("./") and command[0].endswith(".wasm"))
+    spawn_command: str | list[str] = shlex.join(command) if ashell_shell_dispatch else command
     child = subprocess.Popen(
-        command,
+        spawn_command,
         cwd=str(artifact.parent),
+        shell=ashell_shell_dispatch,
         env=environment,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -407,12 +413,20 @@ def main() -> int:
     threading.Thread(target=forward_stderr, args=(child.stderr,), daemon=True).start()
     write_lock = threading.Lock()
     input_stop = threading.Event()
-    threading.Thread(target=forward_input, args=(child, write_lock, input_stop), daemon=True).start()
+    input_thread = threading.Thread(target=forward_input, args=(child, write_lock, input_stop), daemon=True)
+    input_thread.start()
     try:
         return serve_child(child, write_lock=write_lock, input_stop=input_stop)
     except KeyboardInterrupt:
         print("loader: interrupted; stopping WASM", file=sys.stderr, flush=True)
         return _reap_child(child)
+    finally:
+        input_stop.set()
+        try:
+            sys.stdin.buffer.close()
+        except (AttributeError, OSError, ValueError):
+            pass
+        input_thread.join(timeout=2)
 
 
 if __name__ == "__main__":
