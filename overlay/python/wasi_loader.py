@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sys
 from typing import Any
 
@@ -16,6 +17,7 @@ _rpc_stdin = sys.stdin.buffer
 _rpc_stdout = sys.stdout.buffer
 _input_buffer = bytearray()
 _input_eof = False
+_interactive = os.environ.get("HERMES_INTERACTIVE") == "1"
 MAX_FRAME = 16 * 1024 * 1024
 
 
@@ -110,7 +112,7 @@ def install_stdio() -> None:
             return bytes(line)
 
         def isatty(self) -> bool:
-            return False
+            return _interactive
 
         @property
         def encoding(self) -> str:
@@ -131,7 +133,7 @@ def install_stdio() -> None:
             return None
 
         def isatty(self) -> bool:
-            return False
+            return _interactive
 
         @property
         def encoding(self) -> str:

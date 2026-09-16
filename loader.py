@@ -281,14 +281,22 @@ def forward_stderr(stream: BinaryIO) -> None:
         sys.stderr.buffer.flush()
 
 
-def forward_input(process: subprocess.Popen[bytes], write_lock: threading.Lock, stop: threading.Event) -> None:
+def forward_input(process: subprocess.Popen[bytes], write_lock: threading.Lock, stop: threading.Event, *, interactive: bool = False) -> None:
     """Forward formatted host input frames to the direct WASM child."""
     assert process.stdin is not None
     try:
         while not stop.is_set():
-            frame = read_frame(sys.stdin.buffer)
-            if frame is None:
-                break
+            if interactive:
+                data = sys.stdin.buffer.read(4096)
+                frame = {"type": "input", "stream": "stdin", "data": {"encoding": "base64", "data": base64.b64encode(data).decode("ascii")}}
+                if not data:
+                    with write_lock:
+                        write_frame(process.stdin, frame)
+                    break
+            else:
+                frame = read_frame(sys.stdin.buffer)
+                if frame is None:
+                    break
             with write_lock:
                 write_frame(process.stdin, frame)
     except (LoaderError, BrokenPipeError, OSError) as exc:
@@ -424,6 +432,9 @@ def main() -> int:
         ("/hermes-runtime.zip/lib/python3.13/site-packages",
          "/hermes-runtime.zip/lib/python3.13")
     )
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    if interactive:
+        environment["HERMES_INTERACTIVE"] = "1"
     ashell_shell_dispatch = bool(command and command[0].startswith("./") and command[0].endswith(".wasm"))
     spawn_command: str | list[str] = shlex.join(command) if ashell_shell_dispatch else command
     child = subprocess.Popen(
@@ -444,7 +455,12 @@ def main() -> int:
     # never arrive while the host is only asking for metadata.
     input_thread: threading.Thread | None = None
     if args not in (["--version"], ["-V"]):
-        input_thread = threading.Thread(target=forward_input, args=(child, write_lock, input_stop), daemon=True)
+        input_thread = threading.Thread(
+            target=forward_input,
+            args=(child, write_lock, input_stop),
+            kwargs={"interactive": interactive},
+            daemon=True,
+        )
         input_thread.start()
     else:
         assert child.stdin is not None
@@ -456,10 +472,7 @@ def main() -> int:
         return _reap_child(child)
     finally:
         input_stop.set()
-        try:
-            sys.stdin.buffer.close()
-        except (AttributeError, OSError, ValueError):
-            pass
+
         if input_thread is not None:
             input_thread.join(timeout=2)
 
