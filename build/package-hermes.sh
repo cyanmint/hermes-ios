@@ -76,6 +76,10 @@ else
   exit 4
 fi
 copy_tree "$ROOT/overlay/hermes" "$STAGE_ROOT/lib/python3.13/site-packages"
+# The WASM now provides CPython's built-in zlib extension.  Remove any stale
+# source fallback from an older Hermes checkout so it cannot shadow the
+# built-in module and hide the real compression implementation.
+rm -f "$STAGE_ROOT/lib/python3.13/site-packages/zlib.py"
 copy_tree "$WEBUI_SOURCE/api" "$STAGE_ROOT/lib/python3.13/api"
 copy_tree "$WEBUI_SOURCE/static" "$STAGE_ROOT/lib/python3.13/static"
 for module in bootstrap.py server.py mcp_server.py; do
@@ -85,8 +89,8 @@ copy_tree "$ROOT/overlay/python" "$STAGE_ROOT/lib/python3.13"
 
 # Build the complete zip in WSL and copy one file across the Windows
 # filesystem boundary.  The archive is also CPython's import path.
-# ZIP_STORED is intentional: the WASI build omits the zlib extension, while
-# CPython must import encodings from this archive before Python code starts.
+# ZIP_STORED keeps startup independent of archive decompression; zlib is also
+# linked into the WASM for Python's runtime compression APIs.
 python3 -c 'import os, sys, zipfile; root, output = sys.argv[1:]; z = zipfile.ZipFile(output, "w", zipfile.ZIP_STORED); [(z.write(os.path.join(directory, name), os.path.relpath(os.path.join(directory, name), root), compress_type=zipfile.ZIP_STORED)) for directory, _, names in os.walk(root) for name in names]; z.close()' "$STAGE_ROOT" "$STAGE_ZIP"
 cp "$STAGE_ZIP" "$RUNTIME_ARCHIVE"
 

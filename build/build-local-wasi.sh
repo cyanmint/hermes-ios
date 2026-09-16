@@ -75,6 +75,9 @@ python Tools/wasm/wasi.py configure-build-python --clean --quiet -- \
   ZLIB_CFLAGS= ZLIB_LIBS= \
   LIBSQLITE3_LIBS=-lsqlite3
 python Tools/wasm/wasi.py make-build-python --quiet
+printf '%s\n' \
+  'zlib zlibmodule.c -I/root/hermes-build/zlib-1.3.1 /root/hermes-build/zlib-wasi/libz.a' \
+  >> Modules/Setup.local
 export CC="$SDK_CC"
 export AR="$SDK_AR"
 export RANLIB="$SDK_RANLIB"
@@ -82,8 +85,9 @@ export CFLAGS="${CFLAGS:-} --target=wasm32-wasi"
 export LDFLAGS="${LDFLAGS:-} --target=wasm32-wasi"
 python Tools/wasm/wasi.py configure-host --quiet -- \
   --config-cache --without-ensurepip \
-  py_cv_module__socket=n/a py_cv_module__ssl=n/a py_cv_module_zlib=n/a \
-  ZLIB_CFLAGS= ZLIB_LIBS= \
+  py_cv_module__socket=n/a py_cv_module__ssl=n/a \
+  ZLIB_CFLAGS=-I/root/hermes-build/zlib-1.3.1 \
+  ZLIB_LIBS=/root/hermes-build/zlib-wasi/libz.a \
   ac_cv_lib_sqlite3_sqlite3_bind_double=yes \
   ac_cv_lib_sqlite3_sqlite3_column_decltype=yes \
   ac_cv_lib_sqlite3_sqlite3_column_double=yes \
