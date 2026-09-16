@@ -298,6 +298,9 @@ def forward_input(process: subprocess.Popen[bytes], write_lock: threading.Lock, 
                         write_frame(process.stdin, frame)
                     break
             else:
+                ready, _, _ = select.select([sys.stdin.buffer], [], [], 0.2)
+                if not ready:
+                    continue
                 frame = read_frame(sys.stdin.buffer)
                 if frame is None:
                     break
