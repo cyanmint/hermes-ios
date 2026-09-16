@@ -230,20 +230,26 @@ def serve_child(
             frame = read_frame(process.stdout)
             if frame is None:
                 if process.poll() is None:
-                    print("loader: WASM stdout pipe closed unexpectedly", file=sys.stderr, flush=True)
+                    # The a-Shell shell-dispatch wrapper can close the WASM
+                    # stdout before the wrapper itself exits.  Reap it here;
+                    # waiting unconditionally below would leave loader.py
+                    # hung after already routing the final output bytes.
+                    returncode = _reap_child(process)
                 else:
                     returncode = process.wait()
                 break
             if frame.get("type") == "event":
                 # Accept the old internal name from already-built WASM images,
-                # but expose only the frozen stdio.output protocol externally.
+                # then route decoded bytes to the matching host stream instead
+                # of leaking the internal JSON frame to loader stdout.
                 if frame.get("event") == "io.write":
                     frame = {**frame, "event": "stdio.output"}
-                if frame.get("event") not in {"stdio.output", "socket.data"}:
-                    print("loader: unexpected WASM event", file=sys.stderr, flush=True)
+                try:
+                    _route_output_event(frame)
+                except LoaderError as exc:
+                    print(f"loader: WASM protocol error [{exc.code}]: {exc.message}", file=sys.stderr, flush=True)
                     returncode = _reap_child(process)
                     break
-                write_frame(sys.stdout.buffer, frame)
                 continue
             response = _dispatch(frame, sockets)
             if response is not None:
@@ -292,6 +298,26 @@ def forward_input(process: subprocess.Popen[bytes], write_lock: threading.Lock, 
             process.stdin.close()
         except OSError:
             pass
+
+
+def _route_output_event(frame: dict[str, Any]) -> None:
+    """Decode a WASM output event and route it to the matching host stream."""
+    event = frame.get("event")
+    if event != "stdio.output":
+        raise LoaderError("UNEXPECTED_EVENT", f"unsupported WASM event: {event}")
+    stream = frame.get("stream")
+    if stream not in {"stdout", "stderr"}:
+        raise LoaderError("MALFORMED_EVENT", "stdio.output stream is invalid")
+    data = frame.get("data")
+    if not isinstance(data, dict) or data.get("encoding") != "base64" or not isinstance(data.get("data"), str):
+        raise LoaderError("MALFORMED_EVENT", "stdio.output data must be base64")
+    try:
+        payload = base64.b64decode(data["data"], validate=True)
+    except (ValueError, TypeError) as exc:
+        raise LoaderError("MALFORMED_EVENT", "stdio.output data is not valid base64") from exc
+    target = sys.stdout.buffer if stream == "stdout" else sys.stderr.buffer
+    target.write(payload)
+    target.flush()
 
 
 def _find_artifact() -> Path:

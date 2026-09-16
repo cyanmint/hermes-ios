@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
@@ -63,6 +64,33 @@ class LoaderTests(unittest.TestCase):
                 loader._build_command(Path("/bundle/hermes.wasm"), ["model"]),
                 ["/bin/wasm", "hermes.wasm", "model"],
             )
+
+    def test_routes_stdout_event_as_decoded_bytes(self):
+        output = io.BytesIO()
+        with patch.object(loader.sys, "stdout", type("Stream", (), {"buffer": output})()):
+            loader._route_output_event({
+                "type": "event",
+                "event": "stdio.output",
+                "stream": "stdout",
+                "data": {"encoding": "base64", "data": base64.b64encode(b"hello\\n").decode()},
+            })
+        self.assertEqual(output.getvalue(), b"hello\\n")
+
+    def test_routes_stderr_event_as_decoded_bytes(self):
+        output = io.BytesIO()
+        with patch.object(loader.sys, "stderr", type("Stream", (), {"buffer": output})()):
+            loader._route_output_event({
+                "type": "event",
+                "event": "stdio.output",
+                "stream": "stderr",
+                "data": {"encoding": "base64", "data": base64.b64encode(b"warning\\n").decode()},
+            })
+        self.assertEqual(output.getvalue(), b"warning\\n")
+
+    def test_rejects_socket_event_from_host_output(self):
+        with self.assertRaises(loader.LoaderError) as context:
+            loader._route_output_event({"type": "event", "event": "socket.data"})
+        self.assertEqual(context.exception.code, "UNEXPECTED_EVENT")
 
 
 if __name__ == "__main__":
