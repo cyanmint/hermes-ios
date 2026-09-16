@@ -10,11 +10,17 @@ elif [ ! -d "$SOURCE_ROOT/hermes-agent/.git" ] || [ ! -d "$SOURCE_ROOT/hermes-we
 fi
 cp -a "$ROOT/overlay/hermes/." "$SOURCE_ROOT/hermes-agent/"
 cp -a "$ROOT/overlay/webui/." "$SOURCE_ROOT/hermes-webui/"
-rm -rf /root/hermes-build/loader-build
-mkdir -p /root/hermes-build/loader-build
-cd /root/hermes-build/cpython
-git archive HEAD | tar -x -C /root/hermes-build/loader-build
-cp -a .git /root/hermes-build/loader-build/.git
+BUILD_ROOT=/root/hermes-build/loader-build
+if [ "${FORCE_REBUILD:-0}" = 1 ] || [ ! -d "$BUILD_ROOT/.git" ]; then
+  rm -rf "$BUILD_ROOT"
+  mkdir -p "$BUILD_ROOT"
+  cd /root/hermes-build/cpython
+  git archive HEAD | tar -x -C "$BUILD_ROOT"
+  cp -a .git "$BUILD_ROOT/.git"
+else
+  printf 'reusing incremental CPython build tree: %s\n' "$BUILD_ROOT"
+fi
+cd "$BUILD_ROOT"
 cd /root/hermes-build/loader-build
 mkdir -p Programs
 cp "$ROOT/overlay/cpython/Programs/python.c" Programs/python.c
@@ -69,39 +75,46 @@ clang --target=wasm32-wasip1 --sysroot="$WASI_SDK_PATH/share/wasi-sysroot" \
   -o /root/hermes-build/sqlite/sqlite3.o
 llvm-ar rcs /root/hermes-build/sqlite/lib/libsqlite3.a /root/hermes-build/sqlite/sqlite3.o
 unset CC AR RANLIB
-python Tools/wasm/wasi.py configure-build-python --clean --quiet -- \
-  --config-cache --without-ensurepip \
-  py_cv_module__socket=n/a py_cv_module__ssl=n/a py_cv_module_zlib=n/a \
-  ZLIB_CFLAGS= ZLIB_LIBS= \
-  LIBSQLITE3_LIBS=-lsqlite3
+if [ "${FORCE_REBUILD:-0}" = 1 ] || [ ! -f cross-build/build/config.status ]; then
+  python Tools/wasm/wasi.py configure-build-python --clean --quiet -- \
+    --config-cache --without-ensurepip \
+    py_cv_module__socket=n/a py_cv_module__ssl=n/a py_cv_module_zlib=n/a \
+    ZLIB_CFLAGS= ZLIB_LIBS= \
+    LIBSQLITE3_LIBS=-lsqlite3
+else
+  printf 'reusing incremental build configuration\n'
+fi
 python Tools/wasm/wasi.py make-build-python --quiet
-printf '%s\n' \
-  'zlib zlibmodule.c -I/root/hermes-build/zlib-1.3.1 /root/hermes-build/zlib-wasi/libz.a' \
-  >> Modules/Setup.local
+grep -qxF 'zlib zlibmodule.c -I/root/hermes-build/zlib-1.3.1 /root/hermes-build/zlib-wasi/libz.a' Modules/Setup.local || \
+  printf '%s\n' 'zlib zlibmodule.c -I/root/hermes-build/zlib-1.3.1 /root/hermes-build/zlib-wasi/libz.a' >> Modules/Setup.local
 export CC="$SDK_CC"
 export AR="$SDK_AR"
 export RANLIB="$SDK_RANLIB"
 export CFLAGS="${CFLAGS:-} --target=wasm32-wasi"
 export LDFLAGS="${LDFLAGS:-} --target=wasm32-wasi"
-python Tools/wasm/wasi.py configure-host --quiet -- \
-  --config-cache --without-ensurepip \
-  py_cv_module__socket=n/a py_cv_module__ssl=n/a \
-  ZLIB_CFLAGS=-I/root/hermes-build/zlib-1.3.1 \
-  ZLIB_LIBS=/root/hermes-build/zlib-wasi/libz.a \
-  ac_cv_lib_sqlite3_sqlite3_bind_double=yes \
-  ac_cv_lib_sqlite3_sqlite3_column_decltype=yes \
-  ac_cv_lib_sqlite3_sqlite3_column_double=yes \
-  ac_cv_lib_sqlite3_sqlite3_complete=yes \
-  ac_cv_lib_sqlite3_sqlite3_load_extension=yes \
-  ac_cv_lib_sqlite3_sqlite3_progress_handler=yes \
-  ac_cv_lib_sqlite3_sqlite3_result_double=yes \
-  ac_cv_lib_sqlite3_sqlite3_serialize=yes \
-  ac_cv_lib_sqlite3_sqlite3_set_authorizer=yes \
-  ac_cv_lib_sqlite3_sqlite3_trace=yes \
-  ac_cv_lib_sqlite3_sqlite3_trace_v2=yes \
-  ac_cv_lib_sqlite3_sqlite3_value_double=yes \
-  LIBSQLITE3_CFLAGS=-I/root/hermes-build/sqlite \
-  LIBSQLITE3_LIBS=/root/hermes-build/sqlite/lib/libsqlite3.a
+if [ "${FORCE_REBUILD:-0}" = 1 ] || [ ! -f host-build/config.status ]; then
+  python Tools/wasm/wasi.py configure-host --quiet -- \
+    --config-cache --without-ensurepip \
+    py_cv_module__socket=n/a py_cv_module__ssl=n/a \
+    ZLIB_CFLAGS=-I/root/hermes-build/zlib-1.3.1 \
+    ZLIB_LIBS=/root/hermes-build/zlib-wasi/libz.a \
+    ac_cv_lib_sqlite3_sqlite3_bind_double=yes \
+    ac_cv_lib_sqlite3_sqlite3_column_decltype=yes \
+    ac_cv_lib_sqlite3_sqlite3_column_double=yes \
+    ac_cv_lib_sqlite3_sqlite3_complete=yes \
+    ac_cv_lib_sqlite3_sqlite3_load_extension=yes \
+    ac_cv_lib_sqlite3_sqlite3_progress_handler=yes \
+    ac_cv_lib_sqlite3_sqlite3_result_double=yes \
+    ac_cv_lib_sqlite3_sqlite3_serialize=yes \
+    ac_cv_lib_sqlite3_sqlite3_set_authorizer=yes \
+    ac_cv_lib_sqlite3_sqlite3_trace=yes \
+    ac_cv_lib_sqlite3_sqlite3_trace_v2=yes \
+    ac_cv_lib_sqlite3_sqlite3_value_double=yes \
+    LIBSQLITE3_CFLAGS=-I/root/hermes-build/sqlite \
+    LIBSQLITE3_LIBS=/root/hermes-build/sqlite/lib/libsqlite3.a
+else
+  printf 'reusing incremental host configuration\n'
+fi
 if [[ "$WASI_SDK_PATH" == *ashell* ]]; then
   # The a-Shell SDK deliberately imports its host bridge during CPython's
   # --version self-test; ordinary Wasmtime cannot provide ashell_system.
