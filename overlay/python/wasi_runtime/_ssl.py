@@ -69,6 +69,7 @@ class SSLContext:
     verify_flags = property(lambda self: getattr(self, "_verify_flags", 0), lambda self, value: setattr(self, "_verify_flags", value))
     minimum_version = property(lambda self: getattr(self, "_minimum_version", PROTO_MINIMUM_SUPPORTED), lambda self, value: setattr(self, "_minimum_version", value))
     maximum_version = property(lambda self: getattr(self, "_maximum_version", PROTO_MAXIMUM_SUPPORTED), lambda self, value: setattr(self, "_maximum_version", value))
+    post_handshake_auth = property(lambda self: getattr(self, "_post_handshake_auth", False), lambda self, value: setattr(self, "_post_handshake_auth", bool(value)))
     def _set_alpn_protocols(self, protocols):
         # Lib/ssl.py passes the native _ssl method a length-prefixed byte
         # sequence, not the original list of strings.
