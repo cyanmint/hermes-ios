@@ -26,6 +26,7 @@ from typing import Any
 MAX_LINE = 1024 * 1024
 CHUNK = 48 * 1024
 LOOPBACK_HOST = "127.0.0.1"
+DEFAULT_MAX_BYTES = 512 * 1024 * 1024
 
 
 def send_json(writer: asyncio.StreamWriter, value: dict[str, Any]) -> None:
@@ -82,7 +83,20 @@ class DebugServer:
         writer.close()
         await writer.wait_closed()
         await self.terminate_all("debug server restart")
-        os.execv(sys.executable, [sys.executable, *sys.argv])
+        restart_args: list[str] = []
+        index = 1
+        while index < len(sys.argv):
+            argument = sys.argv[index]
+            if argument == "--max-bytes":
+                index += 2
+                continue
+            if argument.startswith("--max-bytes="):
+                index += 1
+                continue
+            restart_args.append(argument)
+            index += 1
+        restart_args.extend(("--max-bytes", str(DEFAULT_MAX_BYTES)))
+        os.execv(sys.executable, [sys.executable, *restart_args])
 
     def resolve_path(self, raw: str) -> Path:
         candidate = (self.root / raw).resolve() if not os.path.isabs(raw) else Path(raw).resolve()
@@ -263,7 +277,7 @@ def server_main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--max-bytes", type=int, default=512 * 1024 * 1024)
+    parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
     parser.add_argument(
         "-v",
         "--verbose",
