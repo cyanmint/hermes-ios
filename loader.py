@@ -263,7 +263,7 @@ def serve_child(
             print(f"loader: WASM protocol error [{exc.code}]: {exc.message}", file=sys.stderr, flush=True)
             returncode = _reap_child(process)
             break
-        except (BrokenPipeError, ConnectionResetError, OSError) as exc:
+        except (BrokenPipeError, ConnectionResetError, OSError, ValueError) as exc:
             print(f"loader: WASM RPC pipe broken: {exc}", file=sys.stderr, flush=True)
             returncode = _reap_child(process)
             break
@@ -474,9 +474,13 @@ def main() -> int:
             daemon=True,
         )
         input_thread.start()
-    else:
+    elif args in (["--version"], ["-V"]):
         assert child.stdin is not None
         child.stdin.close()
+    else:
+        # WebUI has no user-input forwarding thread, but it still needs this
+        # pipe open for capability-broker responses (HTTP/TLS/socket events).
+        pass
     try:
         return serve_child(child, write_lock=write_lock, input_stop=input_stop)
     except KeyboardInterrupt:
