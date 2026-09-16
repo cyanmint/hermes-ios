@@ -435,9 +435,10 @@ def main() -> int:
     # the runtime tree to guest /.  Keep the guest paths deterministic so the
     # interpreter can find encodings before sitecustomize runs.
     environment["PYTHONHOME"] = "/"
+    runtime_archive = os.environ.get("HERMES_RUNTIME_ARCHIVE", "hermes-runtime.zip")
     environment["PYTHONPATH"] = os.pathsep.join(
-        ("/hermes-runtime.zip/lib/python3.13/site-packages",
-         "/hermes-runtime.zip/lib/python3.13")
+        (f"/{runtime_archive}/lib/python3.13/site-packages",
+         f"/{runtime_archive}/lib/python3.13")
     )
     if args and args[0] == "webui":
         # a-Shell exposes the directory containing the dispatched WASM as the
