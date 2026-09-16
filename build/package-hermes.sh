@@ -8,6 +8,7 @@ RUNTIME_ARCHIVE=${RUNTIME_ARCHIVE:-"$ROOT/hermes-runtime.zip"}
 
 SOURCE_WASM="$SOURCE_ARTIFACT/python.wasm"
 CPYTHON_SOURCE=${CPYTHON_SOURCE:-/root/hermes-build/loader-build}
+HERMES_SOURCE=${HERMES_SOURCE:-"$ROOT/build/external/hermes-agent"}
 
 copy_tree() {
   local source=$1
@@ -48,6 +49,20 @@ copy_tree "$SOURCE_ARTIFACT/lib" "$STAGE_ROOT/lib"
 }
 copy_tree "$CPYTHON_SOURCE/Lib" "$STAGE_ROOT/lib/python3.13"
 rm -rf "$STAGE_ROOT/lib/python3.13/site-packages"
+mkdir -p "$STAGE_ROOT/lib/python3.13/site-packages"
+if [ -d "$HERMES_SOURCE/hermes_cli" ]; then
+  for module in "$HERMES_SOURCE"/*.py; do
+    [ -f "$module" ] || continue
+    cp "$module" "$STAGE_ROOT/lib/python3.13/site-packages/"
+  done
+  if [ -d "$HERMES_SOURCE/hermes" ]; then
+    copy_tree "$HERMES_SOURCE/hermes" "$STAGE_ROOT/lib/python3.13/site-packages/hermes"
+  fi
+  copy_tree "$HERMES_SOURCE/hermes_cli" "$STAGE_ROOT/lib/python3.13/site-packages/hermes_cli"
+else
+  printf 'missing Hermes Agent source: %s\n' "$HERMES_SOURCE/hermes_cli" >&2
+  exit 4
+fi
 copy_tree "$ROOT/overlay/hermes" "$STAGE_ROOT/lib/python3.13/site-packages"
 copy_tree "$ROOT/overlay/python" "$STAGE_ROOT/lib/python3.13"
 
