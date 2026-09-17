@@ -39,6 +39,7 @@ requirements="$BUILD_ROOT/hermes-requirements.txt"
 uv export --project "$ROOT/build/external/hermes-agent" --locked \
   --no-dev --no-editable --no-hashes --format requirements.txt \
   --output-file "$requirements"
+sed -i '/^\.$/d' "$requirements"
 wheelhouse="$BUILD_ROOT/pure-wheelhouse"
 site_packages="$BUILD_ROOT/loader-artifact/lib/python3.13/site-packages"
 rm -rf "$wheelhouse"
