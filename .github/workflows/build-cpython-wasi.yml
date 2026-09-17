@@ -87,6 +87,7 @@ jobs:
             -o "$RUNNER_TEMP/wasmtime.tar.xz"
           mkdir -p "$RUNNER_TEMP/wasmtime"
           tar -xJf "$RUNNER_TEMP/wasmtime.tar.xz" --strip-components=1 -C "$RUNNER_TEMP/wasmtime"
+          export PATH="$RUNNER_TEMP/wasmtime:$PATH"
           echo "$RUNNER_TEMP/wasmtime" >> "$GITHUB_PATH"
           wasmtime --version
 
