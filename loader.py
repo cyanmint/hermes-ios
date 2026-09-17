@@ -199,7 +199,15 @@ def _socket_dispatch(sockets: dict[int, socket.socket], params: dict[str, Any]) 
         sock.settimeout(params.get("timeout")); return {"data": base64.b64encode(sock.recv(size, params.get("flags", 0))).decode("ascii")}
     if method == "socket.timeout": sock.settimeout(params.get("timeout")); return {}
     if method == "socket.getopt": return {"value": sock.getsockopt(params["level"], params["option"])}
-    if method == "socket.setopt": sock.setsockopt(params["level"], params["option"], params["value"]); return {}
+    if method == "socket.setopt":
+        try:
+            sock.setsockopt(params["level"], params["option"], params["value"])
+        except OSError as exc:
+            # Windows may reject SO_REUSEADDR for the WASI facade's socket
+            # representation; it is advisory and bind can proceed safely.
+            if not (params.get("level") == 1 and params.get("option") == 2):
+                raise
+        return {}
     if method == "socket.name": return {"address": list(sock.getsockname())}
     if method == "socket.peer": return {"address": list(sock.getpeername())}
     if method == "socket.shutdown": sock.shutdown(params["how"]); return {}
@@ -424,9 +432,11 @@ def _find_wasm_command() -> str:
 
 def _build_command(artifact: Path, args: list[str]) -> list[str]:
     wasm_command = _find_wasm_command()
-    if Path(wasm_command).name == "wasmtime":
+    if Path(wasm_command).stem == "wasmtime":
         root = str(_find_runtime_root(artifact))
         home = os.environ.get("HOME") or "/"
+        if os.name == "nt" or ":" in home or "\\" in home:
+            home = "/"
         command = [
             wasm_command, "run",
             "--env", f"HOME={home}",
@@ -506,7 +516,7 @@ def main() -> int:
     # WASM dispatcher exit instead of waiting for a framed request that can
     # never arrive while the host is only asking for metadata.
     input_thread: threading.Thread | None = None
-    needs_input = args not in (["--version"], ["-V"])
+    needs_input = args not in (["--version"], ["-V"]) and not (args and args[0] in {"webui", "sockettest"})
     if needs_input and interactive:
         input_thread = threading.Thread(
             target=forward_input,
