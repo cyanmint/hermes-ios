@@ -27,12 +27,15 @@ static int report_python_error(const char *stage) {
         const char *message = text == NULL ? "<unprintable>" : PyUnicode_AsUTF8(text);
         fprintf(stderr, "hermes: python error: %s\n",
                 message == NULL ? "<non-utf8>" : message);
+        if (type != NULL || value != NULL || traceback != NULL) {
+            PyErr_Restore(type, value, traceback);
+            type = value = traceback = NULL;
+            PyErr_Print();
+        }
         Py_XDECREF(text);
         Py_XDECREF(type);
         Py_XDECREF(value);
         Py_XDECREF(traceback);
-        PyErr_SetString(PyExc_RuntimeError, "Hermes embedded Python startup failed");
-        PyErr_Print();
     }
     fflush(stderr);
     return 1;
