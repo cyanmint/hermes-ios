@@ -36,6 +36,8 @@ FORCE_REBUILD=1 bash "$ROOT/build/build-local-wasi.sh"
 mkdir -p "$BUILD_ROOT/hermes-artifact"
 cp "$BUILD_ROOT/loader-build/cross-build/wasm32-wasip1/python.wasm" \
   "$BUILD_ROOT/hermes-artifact/python.wasm"
+rm -rf "$BUILD_ROOT/hermes-artifact/lib"
+cp -a "$BUILD_ROOT/loader-artifact/lib" "$BUILD_ROOT/hermes-artifact/lib"
 
 printf '==> packaging hermes.wasm and hermesrt.zip\n'
 SOURCE_ARTIFACT="$BUILD_ROOT/hermes-artifact" \
