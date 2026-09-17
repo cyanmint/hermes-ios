@@ -40,6 +40,19 @@ IPHONEOS_DEPLOYMENT_TARGET=13.0 bash build/build-native-ios.sh
 
 它们在打包阶段覆盖/补丁到 `hermesrt.zip` staging；`build/external/` 只保存可重建的上游临时源码。
 
+runtime ZIP 同时保留两个上游 shallow clone：
+
+```text
+hermes/.git/
+hermes-webui/.git/
+overlay/
+```
+
+真机执行 `./hermes upgrade` 时，会在临时目录中先对两个 clone 执行
+`git reset --hard HEAD`、`git clean -fd`，再执行 `git pull --ff-only`，重新应用
+`overlay/` 和 patch，并原子重写 `hermesrt.zip`。`python/` 条目会从旧 ZIP 原样复制，
+不会随 Agent/WebUI 更新而重建。
+
 ## 验收
 
 主机侧只能检查 Mach-O 结构和 ZIP 内容：

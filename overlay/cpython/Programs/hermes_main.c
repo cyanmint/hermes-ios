@@ -170,8 +170,9 @@ int main(int argc, char **argv) {
     }
 
     const char *entry_module = (argc > 1 && strcmp(argv[1], "webui") == 0)
-        ? "server" : "hermes_cli.main";
-    if (argc > 1 && strcmp(argv[1], "webui") == 0) {
+        ? "server" : (argc > 1 && strcmp(argv[1], "upgrade") == 0)
+            ? "hermes_cli.upgrade" : "hermes_cli.main";
+    if (argc > 1 && (strcmp(argv[1], "webui") == 0 || strcmp(argv[1], "upgrade") == 0)) {
         /* The WebUI server owns its host/port overrides; remove the command
          * token so its normal argv handling sees the same arguments as when
          * launched directly. */
