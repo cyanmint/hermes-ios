@@ -105,6 +105,19 @@ int main(int argc, char **argv) {
         free(python_argv);
         Py_ExitStatusException(status);
     }
+    const wchar_t *runtime_paths[] = {
+        L"./hermesrt.zip/python",
+        L"./hermesrt.zip/hermes",
+        L"./hermesrt.zip/python/site-packages",
+    };
+    for (size_t i = 0; i < sizeof(runtime_paths) / sizeof(runtime_paths[0]); ++i) {
+        status = PyWideStringList_Append(&config.module_search_paths, runtime_paths[i]);
+        if (PyStatus_Exception(status)) {
+            PyConfig_Clear(&config);
+            free(python_argv);
+            Py_ExitStatusException(status);
+        }
+    }
     config.module_search_paths_set = 1;
 
     status = Py_InitializeFromConfig(&config);

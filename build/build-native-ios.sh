@@ -99,7 +99,7 @@ clang --target=arm64-apple-ios${DEPLOYMENT_TARGET} -isysroot "$SDK_ROOT" \
     py_cv_module__lzma=n/a py_cv_module__bz2=n/a py_cv_module__dbm=n/a \
     py_cv_module__gdbm=n/a py_cv_module_readline=n/a py_cv_module__curses=n/a \
     py_cv_module__curses_panel=n/a py_cv_module__blake2=n/a py_cv_module__ctypes=n/a \
-    py_cv_module__decimal=n/a py_cv_module_pyexpat=n/a \
+    py_cv_module__decimal=n/a \
     py_cv_module__elementtree=n/a py_cv_module__uuid=n/a \
     ./configure --host=arm64-apple-ios${DEPLOYMENT_TARGET} \
     --build=x86_64-pc-linux-gnu --with-build-python="$HOST_PYTHON" \
@@ -128,15 +128,18 @@ with open(makefile, "a", encoding="utf-8", newline="\n") as f:
     f.write("MODULE_OBJS += " + " ".join(objects) + "\n")
     f.write("LIBRARY_OBJS += $(MODULE_OBJS)\n")
     f.write("libpython3.13.a: " + " ".join(objects) + "\n")
-    f.write("SHLIBS += -lz " + str(pathlib.Path(makefile).parent / "Modules/_hacl/libHacl_Hash_SHA2.a") + " " + str(pathlib.Path(makefile).parent / "Modules/expat/libexpat.a") + "\n")
-    f.write("PY_CORE_LDFLAGS += -lz " + str(pathlib.Path(makefile).parent / "Modules/_hacl/libHacl_Hash_SHA2.a") + "\n")
+    expat = pathlib.Path(makefile).parent / "Modules/expat/libexpat.a"
+    f.write("SHLIBS += -lz " + str(pathlib.Path(makefile).parent / "Modules/_hacl/libHacl_Hash_SHA2.a") + " -Wl,-force_load," + str(expat) + "\n")
+    hacl = pathlib.Path(makefile).parent / "Modules/_hacl/libHacl_Hash_SHA2.a"
+    f.write("PY_CORE_LDFLAGS += -lz -Wl,-force_load," + str(hacl) + " -Wl,-force_load," + str(expat) + "\n")
 PY
 
-(cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" || {
+(cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make -j"${JOBS:-16}" Modules/_hacl/libHacl_Hash_SHA2.a Modules/expat/libexpat.a)
+(cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" libpython3.13.a || {
   rc=$?
   [ "$rc" -eq 2 ] || exit "$rc"
-  printf '\nSHLIBS += -lz -lsqlite3 %s/Modules/_hacl/libHacl_Hash_SHA2.a %s/Modules/expat/libexpat.a\nPY_CORE_LDFLAGS += -lz -lsqlite3 %s/Modules/_hacl/libHacl_Hash_SHA2.a\n' "$TARGET_ROOT" "$TARGET_ROOT" "$TARGET_ROOT" >> "$TARGET_ROOT/Makefile"
-  PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}"
+  printf '\nSHLIBS += -lz -lsqlite3 %s/Modules/_hacl/libHacl_Hash_SHA2.a -Wl,-force_load,%s/Modules/expat/libexpat.a\nPY_CORE_LDFLAGS += -lz -lsqlite3 %s/Modules/_hacl/libHacl_Hash_SHA2.a\n' "$TARGET_ROOT" "$TARGET_ROOT" "$TARGET_ROOT" >> "$TARGET_ROOT/Makefile"
+  PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" libpython3.13.a
 })
 
 mkdir -p "$BUILD_ROOT/artifact"
