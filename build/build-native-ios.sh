@@ -77,7 +77,7 @@ clang --target=arm64-apple-ios${DEPLOYMENT_TARGET} -isysroot "$SDK_ROOT" \
     py_cv_module__lzma=n/a py_cv_module__bz2=n/a py_cv_module__dbm=n/a \
     py_cv_module__gdbm=n/a py_cv_module_readline=n/a py_cv_module__curses=n/a \
     py_cv_module__curses_panel=n/a py_cv_module__blake2=n/a py_cv_module__ctypes=n/a \
-    py_cv_module__decimal=n/a py_cv_module__sha2=n/a py_cv_module_pyexpat=n/a \
+    py_cv_module__decimal=n/a py_cv_module_pyexpat=n/a \
     py_cv_module__elementtree=n/a py_cv_module__uuid=n/a \
     ./configure --host=arm64-apple-ios${DEPLOYMENT_TARGET} \
     --build=x86_64-pc-linux-gnu --with-build-python="$HOST_PYTHON" \
@@ -107,12 +107,14 @@ with open(makefile, "a", encoding="utf-8", newline="\n") as f:
     f.write("LIBRARY_OBJS += $(MODULE_OBJS)\n")
     f.write("libpython3.13.a: " + " ".join(objects) + "\n")
     f.write("SHLIBS += -lz " + str(pathlib.Path(target).parent / "Modules/_hacl/libHacl_Hash_SHA2.a") + " " + str(pathlib.Path(target).parent / "Modules/expat/libexpat.a") + "\n")
+    f.write("PY_CORE_LDFLAGS += -lz " + str(pathlib.Path(target).parent / "Modules/_hacl/libHacl_Hash_SHA2.a") + "\n")
 PY
-(cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make -j"${JOBS:-2}" || {
+
+(cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-2}" || {
   rc=$?
   [ "$rc" -eq 2 ] || exit "$rc"
-  printf '\nSHLIBS += -lz -lsqlite3 %s/Modules/_hacl/libHacl_Hash_SHA2.a %s/Modules/expat/libexpat.a\nPY_CORE_LDFLAGS += -lz -lsqlite3\n' "$TARGET_ROOT" "$TARGET_ROOT" >> "$TARGET_ROOT/Makefile"
-  PATH="$TOOLBIN:/usr/bin:/bin" make -j"${JOBS:-2}"
+  printf '\nSHLIBS += -lz -lsqlite3 %s/Modules/_hacl/libHacl_Hash_SHA2.a %s/Modules/expat/libexpat.a\nPY_CORE_LDFLAGS += -lz -lsqlite3 %s/Modules/_hacl/libHacl_Hash_SHA2.a\n' "$TARGET_ROOT" "$TARGET_ROOT" "$TARGET_ROOT" >> "$TARGET_ROOT/Makefile"
+  PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-2}"
 })
 
 mkdir -p "$BUILD_ROOT/artifact"

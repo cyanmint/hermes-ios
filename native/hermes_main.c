@@ -55,6 +55,18 @@ static void flush_python_stdio(void) {
     fflush(stderr);
 }
 
+static int configure_python_stdio(void) {
+    int result = PyRun_SimpleString(
+        "import io, os, sys\n"
+        "sys.stdout = io.TextIOWrapper(os.fdopen(os.dup(1), 'wb'), encoding='utf-8', errors='backslashreplace', line_buffering=True)\n"
+        "sys.stderr = io.TextIOWrapper(os.fdopen(os.dup(2), 'wb'), encoding='utf-8', errors='backslashreplace', line_buffering=True)\n");
+    if (result != 0) {
+        PyErr_Clear();
+        return -1;
+    }
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc == 2 && (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0)) {
         static const char version[] = "Hermes Agent v0.21.2\n";
@@ -124,6 +136,14 @@ int main(int argc, char **argv) {
         return result;
     }
     Py_DECREF(bootstrap);
+
+    if (configure_python_stdio() != 0) {
+        int result = report_python_error("configure Python stdio");
+        Py_FinalizeEx();
+        PyConfig_Clear(&config);
+        free(python_argv);
+        return result;
+    }
 
     PyObject *module = PyImport_ImportModule("hermes_cli.main");
     if (module == NULL) {

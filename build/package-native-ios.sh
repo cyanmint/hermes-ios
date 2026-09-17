@@ -64,7 +64,7 @@ CC=${CC:-arm64-apple-ios-clang}
 "$CC" -I"$TARGET_ROOT" -I"$TARGET_ROOT/Include" -I"$TARGET_ROOT" \
   -c "$ROOT/native/hermes_main.c" -o "$BUILD_ROOT/hermes_main.o"
 "$CC" -mios-version-min="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}" \
-  -Wl,-all_load "$TARGET_ROOT/libpython3.13.a" "$BUILD_ROOT/hermes_main.o" \
+  -Wl,-all_load "$TARGET_ROOT/libpython3.13.a" "$TARGET_ROOT/Modules/_hacl/libHacl_Hash_SHA2.a" "$BUILD_ROOT/hermes_main.o" \
   -Wl,-rpath,@loader_path -framework CoreFoundation -ldl -lpthread -lm -lz -lsqlite3 "$TARGET_ROOT/ios_compat.o" \
   -o "$OUTPUT"
 chmod 755 "$OUTPUT"
