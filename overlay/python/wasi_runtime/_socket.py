@@ -76,6 +76,16 @@ def create_connection(address, timeout=_default_timeout, source_address=None):
 class _SocketFile:
     def __init__(self, sock, mode): self.sock, self.mode = sock, mode
     def read(self, size=-1): return self.sock.recv(65536 if size < 0 else size)
+    def readline(self, size=-1):
+        data = bytearray()
+        while size < 0 or len(data) < size:
+            chunk = self.sock.recv(1)
+            if not chunk:
+                break
+            data.extend(chunk)
+            if chunk == b"\n":
+                break
+        return bytes(data)
     def readinto(self, buf): return self.sock.recv_into(buf)
     def write(self, data): return self.sock.send(data)
     def flush(self): pass
