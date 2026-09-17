@@ -10,6 +10,9 @@ SDK_ROOT=${IOS_SDK_ROOT:-$BUILD_ROOT/sdks/iPhoneOS${SDK_VERSION}.sdk}
 CPYTHON_REF=${CPYTHON_REF:-v3.13.9}
 CPYTHON_ROOT=${CPYTHON_ROOT:-$BUILD_ROOT/cpython}
 HOST_PYTHON=${HOST_PYTHON:-$BUILD_ROOT/host-python/bin/python3.13}
+OPENSSL_REF=${OPENSSL_REF:-openssl-3.3.2}
+OPENSSL_ROOT=${OPENSSL_ROOT:-$BUILD_ROOT/openssl}
+OPENSSL_INSTALL=${OPENSSL_INSTALL:-$BUILD_ROOT/openssl-install}
 TARGET_ROOT=${TARGET_ROOT:-$BUILD_ROOT/target}
 TOOLBIN=$BUILD_ROOT/bin
 
@@ -34,7 +37,7 @@ if [ ! -x "$HOST_PYTHON" ]; then
   if [ ! -d "$HOST_ROOT/.git" ]; then
     git clone --filter=blob:none --depth=1 --branch "$CPYTHON_REF" https://github.com/python/cpython.git "$HOST_ROOT"
     (cd "$HOST_ROOT" && ./configure --prefix="$BUILD_ROOT/host-python" --without-ensurepip --disable-test-modules)
-    (cd "$HOST_ROOT" && make -j"${JOBS:-2}")
+    (cd "$HOST_ROOT" && make -j"${JOBS:-16}")
     (cd "$HOST_ROOT" && make install)
   fi
 fi
@@ -58,6 +61,23 @@ exec llvm-ar "$@"
 EOF
 chmod +x "$TOOLBIN"/*
 
+if [ ! -d "$OPENSSL_ROOT/.git" ]; then
+  git clone --depth=1 --branch "$OPENSSL_REF" https://github.com/openssl/openssl.git "$OPENSSL_ROOT"
+fi
+if [ ! -f "$OPENSSL_INSTALL/lib/libssl.a" ] || [ ! -f "$OPENSSL_INSTALL/lib/libcrypto.a" ]; then
+  (
+    cd "$OPENSSL_ROOT"
+    make clean >/dev/null 2>&1 || true
+    CC="$TOOLBIN/arm64-apple-ios-clang" \
+      CFLAGS="-I$SDK_ROOT/usr/include -isysroot=$SDK_ROOT -miphoneos-version-min=$DEPLOYMENT_TARGET" \
+      ./Configure iphoneos-cross no-shared no-apps no-tests \
+        --prefix="$OPENSSL_INSTALL" -static
+    sed -i "s#/SDKs/#$SDK_ROOT#g" Makefile
+    make -j16 build_libs
+    make install_sw
+  )
+fi
+
 TARGET_ROOT=$BUILD_ROOT/target-cpython
 rm -rf "$TARGET_ROOT"
 mkdir -p "$TARGET_ROOT"
@@ -73,7 +93,9 @@ clang --target=arm64-apple-ios${DEPLOYMENT_TARGET} -isysroot "$SDK_ROOT" \
   -c "$TARGET_ROOT/ios_compat.c" -o "$TARGET_ROOT/ios_compat.o"
 (cd "$TARGET_ROOT" && \
   PATH="$TOOLBIN:/usr/bin:/bin" CC=arm64-apple-ios-clang \
-    LIBS="$TARGET_ROOT/ios_compat.o" \
+    CPPFLAGS="-DOPENSSL_THREADS -I$OPENSSL_INSTALL/include" \
+    LDFLAGS="-L$OPENSSL_INSTALL/lib" \
+    LIBS="$TARGET_ROOT/ios_compat.o -lssl -lcrypto" \
     py_cv_module__lzma=n/a py_cv_module__bz2=n/a py_cv_module__dbm=n/a \
     py_cv_module__gdbm=n/a py_cv_module_readline=n/a py_cv_module__curses=n/a \
     py_cv_module__curses_panel=n/a py_cv_module__blake2=n/a py_cv_module__ctypes=n/a \
@@ -106,15 +128,15 @@ with open(makefile, "a", encoding="utf-8", newline="\n") as f:
     f.write("MODULE_OBJS += " + " ".join(objects) + "\n")
     f.write("LIBRARY_OBJS += $(MODULE_OBJS)\n")
     f.write("libpython3.13.a: " + " ".join(objects) + "\n")
-    f.write("SHLIBS += -lz " + str(pathlib.Path(target).parent / "Modules/_hacl/libHacl_Hash_SHA2.a") + " " + str(pathlib.Path(target).parent / "Modules/expat/libexpat.a") + "\n")
-    f.write("PY_CORE_LDFLAGS += -lz " + str(pathlib.Path(target).parent / "Modules/_hacl/libHacl_Hash_SHA2.a") + "\n")
+    f.write("SHLIBS += -lz " + str(pathlib.Path(makefile).parent / "Modules/_hacl/libHacl_Hash_SHA2.a") + " " + str(pathlib.Path(makefile).parent / "Modules/expat/libexpat.a") + "\n")
+    f.write("PY_CORE_LDFLAGS += -lz " + str(pathlib.Path(makefile).parent / "Modules/_hacl/libHacl_Hash_SHA2.a") + "\n")
 PY
 
-(cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-2}" || {
+(cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" || {
   rc=$?
   [ "$rc" -eq 2 ] || exit "$rc"
   printf '\nSHLIBS += -lz -lsqlite3 %s/Modules/_hacl/libHacl_Hash_SHA2.a %s/Modules/expat/libexpat.a\nPY_CORE_LDFLAGS += -lz -lsqlite3 %s/Modules/_hacl/libHacl_Hash_SHA2.a\n' "$TARGET_ROOT" "$TARGET_ROOT" "$TARGET_ROOT" >> "$TARGET_ROOT/Makefile"
-  PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-2}"
+  PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}"
 })
 
 mkdir -p "$BUILD_ROOT/artifact"

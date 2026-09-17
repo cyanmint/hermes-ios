@@ -6,6 +6,7 @@ TARGET_ROOT=${1:?target CPython build directory}
 OUTPUT=${2:?output executable}
 BUILD_ROOT=$(dirname "$OUTPUT")
 ARCHIVE="$BUILD_ROOT/hermesrt.zip"
+OPENSSL_INSTALL=${OPENSSL_INSTALL:-$(dirname "$BUILD_ROOT")/openssl-install}
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
@@ -65,7 +66,8 @@ CC=${CC:-arm64-apple-ios-clang}
   -c "$ROOT/native/hermes_main.c" -o "$BUILD_ROOT/hermes_main.o"
 "$CC" -mios-version-min="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}" \
   -Wl,-all_load "$TARGET_ROOT/libpython3.13.a" "$TARGET_ROOT/Modules/_hacl/libHacl_Hash_SHA2.a" "$BUILD_ROOT/hermes_main.o" \
-  -Wl,-rpath,@loader_path -framework CoreFoundation -ldl -lpthread -lm -lz -lsqlite3 "$TARGET_ROOT/ios_compat.o" \
+  -Wl,-rpath,@loader_path -framework CoreFoundation -ldl -lpthread -lm -lz -lsqlite3 \
+  -L"$OPENSSL_INSTALL/lib" -lssl -lcrypto "$TARGET_ROOT/ios_compat.o" \
   -o "$OUTPUT"
 chmod 755 "$OUTPUT"
 python3 - "$ARCHIVE" <<'PY'
