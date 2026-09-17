@@ -277,6 +277,13 @@ with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as output:
                     text = text.replace(marker, embedded, 1)
                     break
             data = text.encode("utf-8")
+        if info.filename == "server.py":
+            text = data.decode("utf-8").replace("\r\n", "\n")
+            start = text.find("    try:\n        from api.gateway_watcher import start_watcher")
+            end = text.find("    try:\n        from api.plugins import load_plugins", start)
+            if start >= 0 and end > start:
+                text = text[:start] + "    # Optional background workers are disabled in constrained WASI hosts.\n\n" + text[end:]
+            data = text.encode("utf-8")
         output.writestr(info.filename, data)
 PY
 cp "$STAGE_ZIP" "$RUNTIME_ARCHIVE"
