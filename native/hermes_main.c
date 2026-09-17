@@ -1,17 +1,13 @@
 #include <Python.h>
 #include <stdlib.h>
-#include <string.h>
 
 static char **build_argv(int argc, char **argv) {
-    char **result = calloc((size_t)argc + 3, sizeof(*result));
+    char **result = calloc((size_t)argc + 1, sizeof(*result));
     if (result == NULL) {
         return NULL;
     }
-    result[0] = argv[0];
-    result[1] = "-m";
-    result[2] = "hermes_cli.main";
-    for (int i = 1; i < argc; ++i) {
-        result[i + 2] = argv[i];
+    for (int i = 0; i < argc; ++i) {
+        result[i] = argv[i];
     }
     return result;
 }
@@ -23,16 +19,53 @@ int main(int argc, char **argv) {
         return 70;
     }
 
-    /* The runtime archive is the only external payload.  CPython's normal
-       importer handles pure-Python modules from this ZIP; native CPython
-       modules are compiled into libpython during the iOS build. */
-    if (setenv("PYTHONPATH", "./hermesrt.zip", 1) != 0) {
-        fputs("hermes: unable to set PYTHONPATH\n", stderr);
-        free(python_argv);
-        return 70;
-    }
+    /* The runtime archive is the only external payload.  Configure the
+       embedded interpreter explicitly because iOS has no host-style prefix. */
+    PyConfig config;
+    PyConfig_InitIsolatedConfig(&config);
+    config.parse_argv = 0;
 
-    int result = Py_BytesMain(argc + 2, python_argv);
+    PyStatus status = PyConfig_SetBytesArgv(&config, argc, python_argv);
+    if (PyStatus_Exception(status)) {
+        PyConfig_Clear(&config);
+        free(python_argv);
+        Py_ExitStatusException(status);
+    }
+    status = PyConfig_SetString(&config, &config.program_name, L"./hermes");
+    if (PyStatus_Exception(status)) {
+        PyConfig_Clear(&config);
+        free(python_argv);
+        Py_ExitStatusException(status);
+    }
+    status = PyConfig_SetString(&config, &config.run_module,
+                                L"hermes_cli.main");
+    if (PyStatus_Exception(status)) {
+        PyConfig_Clear(&config);
+        free(python_argv);
+        Py_ExitStatusException(status);
+    }
+    status = PyWideStringList_Append(&config.module_search_paths,
+                                     L"./hermesrt.zip");
+    if (PyStatus_Exception(status)) {
+        PyConfig_Clear(&config);
+        free(python_argv);
+        Py_ExitStatusException(status);
+    }
+    config.module_search_paths_set = 1;
+
+    status = Py_InitializeFromConfig(&config);
+    if (PyStatus_Exception(status)) {
+        PyConfig_Clear(&config);
+        free(python_argv);
+        Py_ExitStatusException(status);
+    }
+    int result = PyRun_SimpleString(
+        "import runpy\n"
+        "runpy.run_module('hermes_cli.main', run_name='__main__')\n");
+    if (result != 0) {
+        PyErr_Print();
+    }
+    PyConfig_Clear(&config);
     free(python_argv);
     return result;
 }
