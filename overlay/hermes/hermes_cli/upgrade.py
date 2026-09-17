@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import io
 import os
 import runpy
 import shutil
-import subprocess
 import sys
 import tempfile
 import zipfile
+from urllib.parse import urlparse
 from pathlib import Path
 
 
@@ -35,34 +36,75 @@ def _copytree_contents(source: Path, target: Path) -> None:
 
 
 def _git_pull(path: Path) -> None:
-    reset = subprocess.run(
-        ["git", "-C", str(path), "reset", "--hard", "HEAD"],
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+    try:
+        from dulwich import porcelain
+        from dulwich.repo import Repo
+    except ImportError as exc:
+        raise RuntimeError("upgrade requires bundled pure-Python dulwich") from exc
+    repo = Repo(str(path))
+    porcelain.reset(repo, "hard")
+    remote_url = repo.get_config().get((b"remote", b"origin"), b"url")
+    if not remote_url:
+        raise RuntimeError(f"git clone has no origin URL: {path.name}")
+    fetched = porcelain.fetch(repo, remote_url.decode("utf-8"))
+    refs = fetched.refs
+    candidates = (
+        b"refs/remotes/origin/main",
+        b"refs/remotes/origin/master",
+        b"refs/heads/main",
+        b"refs/heads/master",
     )
-    if reset.returncode:
-        raise RuntimeError(f"git restore failed for {path.name}:\n{reset.stdout}")
-    clean = subprocess.run(
-        ["git", "-C", str(path), "clean", "-fd"],
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    if clean.returncode:
-        raise RuntimeError(f"git clean failed for {path.name}:\n{clean.stdout}")
-    result = subprocess.run(
-        ["git", "-C", str(path), "pull", "--ff-only"],
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    if result.returncode:
-        raise RuntimeError(f"git pull failed for {path.name}:\n{result.stdout}")
-    print(result.stdout.rstrip())
+    new_head = next((refs[name] for name in candidates if name in refs), None)
+    if new_head is None:
+        remote_heads = sorted(name for name in refs if name.startswith(b"refs/heads/"))
+        if len(remote_heads) != 1:
+            raise RuntimeError(f"could not identify origin default branch: {remote_heads!r}")
+        new_head = refs[remote_heads[0]]
+    target_ref = b"refs/heads/upgrade-target"
+    repo.refs[target_ref] = new_head
+    if isinstance(new_head, str):
+        head_hex = new_head
+    elif len(new_head) == 40:
+        head_hex = new_head.decode("ascii")
+    else:
+        head_hex = new_head.hex()
+    try:
+        porcelain.reset(repo, "hard", treeish="refs/heads/upgrade-target")
+    except KeyError:
+        _github_archive_fallback(path, remote_url.decode("utf-8"), "main")
+    del repo.refs[target_ref]
+
+
+def _github_archive_fallback(path: Path, remote_url: str, branch: str) -> None:
+    parsed = urlparse(remote_url.removesuffix(".git"))
+    if parsed.netloc != "github.com":
+        raise RuntimeError("shallow Git object is unavailable and remote is not GitHub")
+    owner_repo = parsed.path.strip("/")
+    url = f"https://codeload.github.com/{owner_repo}/zip/refs/heads/{branch}"
+    try:
+        import httpx
+        response = httpx.get(url, timeout=90, follow_redirects=True)
+        response.raise_for_status()
+        archive = zipfile.ZipFile(io.BytesIO(response.content))
+    except Exception as exc:
+        raise RuntimeError(f"GitHub source fallback failed: {exc}") from exc
+    with tempfile.TemporaryDirectory(prefix="hermes-source-") as extracted:
+        extracted_root = Path(extracted)
+        archive.extractall(extracted_root)
+        roots = [p for p in extracted_root.iterdir() if p.is_dir()]
+        if len(roots) != 1:
+            raise RuntimeError("GitHub source archive has an unexpected root")
+        git_dir = path / ".git"
+        for child in path.iterdir():
+            if child.name == ".git":
+                continue
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        _copytree_contents(roots[0], path)
+        if not git_dir.is_dir():
+            raise RuntimeError("source clone lost its .git directory")
 
 
 def _apply_overlay(root: Path) -> None:
@@ -139,7 +181,7 @@ def main() -> int:
             _git_pull(root / "hermes-webui")
             _build_runtime(root)
             _write_archive(archive, root, archive)
-        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        except (OSError, RuntimeError) as exc:
             print(f"upgrade failed: {exc}", file=sys.stderr)
             return 1
     print("Hermes runtime upgraded; Python runtime was preserved.")

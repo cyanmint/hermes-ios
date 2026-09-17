@@ -41,7 +41,8 @@ if [ "${HERMES_REFRESH_VENDOR:-1}" = "1" ]; then
     urllib3==2.7.0 websockets==15.0.1 pathspec==1.1.1 python-multipart==0.0.20 \
     markdown-it-py==4.0.0 mdurl==0.1.2 pygments==2.19.2 charset-normalizer==3.4.4 \
     typing-extensions==4.15.0 tqdm==4.67.1 sniffio==1.3.1 socksio==1.0.0 \
-    markupsafe==3.0.2 six==1.17.0 pytz==2025.2 python-dateutil==2.9.0.post0
+    markupsafe==3.0.2 six==1.17.0 pytz==2025.2 python-dateutil==2.9.0.post0 \
+    dulwich==0.22.8
   find "$VENDOR_ROOT" -type f -name '*.so' -delete
   if [ ! -f "$VENDOR_ROOT/openai/lib/__init__.py" ]; then
     : > "$VENDOR_ROOT/openai/lib/__init__.py"
