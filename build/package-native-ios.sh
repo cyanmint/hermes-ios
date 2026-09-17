@@ -5,6 +5,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 TARGET_ROOT=${1:?target CPython build directory}
 OUTPUT=${2:?output executable}
 BUILD_ROOT=$(dirname "$OUTPUT")
+HOST_PYTHON=${HOST_PYTHON:-$(dirname "$TARGET_ROOT")/host-python/bin/python3.13}
 ARCHIVE="$BUILD_ROOT/hermesrt.zip"
 OPENSSL_INSTALL=${OPENSSL_INSTALL:-$(dirname "$BUILD_ROOT")/openssl-install}
 STAGE=$(mktemp -d)
@@ -22,6 +23,8 @@ for package in acp_adapter agent cron gateway hermes_cli plugins providers tools
   [ -d "$HERMES_SOURCE/$package" ] && cp -a "$HERMES_SOURCE/$package" "$STAGE/hermes/"
 done
 cp -a "$HERMES_SOURCE"/*.py "$STAGE/hermes/" 2>/dev/null || true
+"$HOST_PYTHON" "$ROOT/native/patch-agent-sdk-compat.py" "$STAGE/hermes/agent/agent_init.py"
+cp "$ROOT/native/legacy_responses.py" "$STAGE/hermes/agent/legacy_responses.py"
 VENDOR_ROOT=${HERMES_VENDOR:-$(dirname "$BUILD_ROOT")/vendor}
 if [ "${HERMES_REFRESH_VENDOR:-1}" = "1" ]; then
   command -v uv >/dev/null 2>&1 || { echo "uv is required to vendor pure-Python dependencies" >&2; exit 2; }
@@ -40,7 +43,9 @@ if [ "${HERMES_REFRESH_VENDOR:-1}" = "1" ]; then
     typing-extensions==4.15.0 tqdm==4.67.1 sniffio==1.3.1 socksio==1.0.0 \
     markupsafe==3.0.2 six==1.17.0 pytz==2025.2 python-dateutil==2.9.0.post0
   find "$VENDOR_ROOT" -type f -name '*.so' -delete
-  : > "$VENDOR_ROOT/openai/lib/__init__.py"
+  if [ ! -f "$VENDOR_ROOT/openai/lib/__init__.py" ]; then
+    : > "$VENDOR_ROOT/openai/lib/__init__.py"
+  fi
 fi
 if [ -d "$VENDOR_ROOT" ]; then
   cp -a "$VENDOR_ROOT/." "$STAGE/python/site-packages/"
@@ -82,7 +87,7 @@ CC=${CC:-arm64-apple-ios-clang}
 "$CC" -I"$TARGET_ROOT" -I"$TARGET_ROOT/Include" -I"$TARGET_ROOT" \
   -c "$ROOT/native/hermes_main.c" -o "$BUILD_ROOT/hermes_main.o"
 "$CC" -mios-version-min="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}" \
--Wl,-all_load "$TARGET_ROOT/libpython3.13.a" "$TARGET_ROOT/Modules/_hacl/libHacl_Hash_SHA2.a" "$TARGET_ROOT/Modules/expat/libexpat.a" "$BUILD_ROOT/hermes_main.o" \
+-Wl,-headerpad_max_install_names -Wl,-x -Wl,-no_function_starts -Wl,-no_data_in_code_info -Wl,-all_load "$TARGET_ROOT/libpython3.13.a" -Wl,-force_load,"$TARGET_ROOT/Modules/_hacl/libHacl_Hash_SHA2.a" -Wl,-force_load,"$TARGET_ROOT/Modules/expat/libexpat.a" "$BUILD_ROOT/hermes_main.o" \
   -Wl,-rpath,@loader_path -framework CoreFoundation -ldl -lpthread -lm -lz -lsqlite3 \
   -L"$OPENSSL_INSTALL/lib" -lssl -lcrypto "$TARGET_ROOT/ios_compat.o" \
   -o "$OUTPUT"
