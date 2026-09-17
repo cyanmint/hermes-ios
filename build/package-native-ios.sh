@@ -56,6 +56,7 @@ if [ -d "$WEBUI_SOURCE/api" ]; then
     [ -f "$WEBUI_SOURCE/$module" ] && cp "$WEBUI_SOURCE/$module" "$STAGE/hermes-webui/"
   done
 fi
+"$HOST_PYTHON" "$ROOT/native/patch-webui-zip.py" "$STAGE/hermes-webui/api/config.py"
 [ -d "$STAGE/hermes/plugins/browser" ] && : > "$STAGE/hermes/plugins/browser/__init__.py"
 cp "$ROOT/native/sitecustomize.py" "$STAGE/python/sitecustomize.py"
 # Native CPython modules are required to be statically linked into libpython.
