@@ -33,7 +33,7 @@ if [ "${HERMES_REFRESH_VENDOR:-1}" = "1" ]; then
   uv pip install --target "$VENDOR_ROOT" --python "$HOST_PYTHON" --no-deps \
     certifi==2026.5.20 python-dotenv==1.2.2 fire==0.7.1 rich==14.3.3 \
     tenacity==9.1.4 pyyaml==6.0.3 ruamel.yaml==0.18.17 requests==2.33.0 \
-    jinja2==3.1.6 prompt_toolkit==3.0.52 croniter==6.0.0 \
+    jinja2==3.1.6 prompt_toolkit==3.0.52 wcwidth==0.2.13 croniter==6.0.0 \
     snowballstemmer==3.1.1 packaging==26.0 Markdown==3.10.2 PyJWT==2.13.0 \
     urllib3==2.7.0 websockets==15.0.1 pathspec==1.1.1 python-multipart==0.0.20 \
     markdown-it-py==4.0.0 mdurl==0.1.2 pygments==2.19.2 charset-normalizer==3.4.4 \
