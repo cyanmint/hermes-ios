@@ -1,598 +1,130 @@
-name: Build CPython WASI runtime
+name: Build Ubuntu WASI runtime
 
 on:
+  push:
+    paths:
+      - '.github/workflows/build-cpython-wasi.yml'
+      - 'build/**'
+      - 'overlay/**'
+      - 'loader.py'
+      - 'tests/**'
   workflow_dispatch:
     inputs:
       cpython_ref:
-        description: CPython tag or commit (must be a 3.13 release)
+        description: CPython tag or commit
         required: true
         default: v3.13.9
-      hermes_ref:
-        description: hermes-agent ref to build
+      publish_release:
+        description: Create a GitHub release with the three delivery files
         required: true
-        default: 3bef6b6a5c543c587b756e4091a8c3d0d66e1a6b
-  push:
-    paths:
-      - .github/workflows/build-cpython-wasi.yml
-      - hermes-agent/pyproject.toml
-      - hermes-agent/uv.lock
-      - hermes-agent/**/Cargo.toml
-      - hermes-agent/**/pyproject.toml
+        type: boolean
+        default: false
+      release_tag:
+        description: Release tag (required when publishing)
+        required: false
+        default: ''
 
 permissions:
-  contents: read
-
-env:
-  PYTHON_VERSION: '3.13'
-  CPYTHON_REF: ${{ inputs.cpython_ref || 'v3.13.9' }}
-  HERMES_REF: ${{ inputs.hermes_ref || '3bef6b6a5c543c587b756e4091a8c3d0d66e1a6b' }}
-  WASI_SDK_VERSION: '25'
-  RUST_TOOLCHAIN: '1.89.0'
-  WASM_TARGET: wasm32-wasip1
-  CARGO_NET_OFFLINE: 'false'
-  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  contents: write
 
 jobs:
   build:
-    name: CPython + Hermes native extensions (WASI)
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
+    env:
+      CPYTHON_REF: ${{ inputs.cpython_ref || 'v3.13.9' }}
+      WASI_SDK_VERSION: '24.0'
+      WASMTIME_VERSION: '48.0.2'
+      HERMES_AGENT_COMMIT: '2246c245f51e03eb6a151d19119009156e84659a'
+      HERMES_WEBUI_COMMIT: 'e36f77389191fe9d81cd3a7416772e2f7b022e19'
 
     steps:
-      - name: Check out wrapper repository
+      - name: Check out repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 1
 
-      - name: Select Hermes revision
+      - name: Install Ubuntu build dependencies
         shell: bash
         run: |
           set -euo pipefail
-          git -C hermes-agent fetch --depth 1 origin "${HERMES_REF}"
-          git -C hermes-agent checkout --detach FETCH_HEAD
-          test "$(git -C hermes-agent rev-parse HEAD)" = "${HERMES_REF}" || {
-            echo 'HERMES_REF must resolve to the requested commit' >&2
-            exit 1
-          }
-
-      - name: Install host build tools
-        run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
-            autoconf automake build-essential bzip2 cmake file git \
+            autoconf automake build-essential bzip2 curl file git \
             libbz2-dev libffi-dev liblzma-dev libncurses5-dev \
             libreadline-dev libsqlite3-dev libssl-dev libxml2-dev \
-            libxmlsec1-dev pkg-config tk-dev xz-utils zlib1g-dev
+            libxmlsec1-dev pkg-config tar tk-dev unzip xz-utils zlib1g-dev
 
-      - name: Install host Python and Rust
+      - name: Install host Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-          cache: pip
-
-      - name: Restore CPython WASI build cache
-        id: cpython-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ runner.temp }}/cpython
-          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v6-loader-facades
-
-      - name: Restore WASI SDK cache
-        id: wasi-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ${{ runner.temp }}/wasi-sdk-${{ env.WASI_SDK_VERSION }}.0-x86_64-linux.tar.gz
-            ${{ runner.temp }}/wasi-sdk-${{ env.WASI_SDK_VERSION }}.0-x86_64-linux
-          key: wasi-sdk-v1-${{ runner.os }}-${{ env.WASI_SDK_VERSION }}
-
-      - name: Restore Rust dependency and native build cache
-        id: rust-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            build/native/pydantic-core/target
-          key: pydantic-core-wasi-${{ runner.os }}-${{ env.WASM_TARGET }}-2.46.4-v1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: '1.95.0'
           targets: wasm32-wasip1
           components: rust-src
 
-      - name: Install WASI SDK
+      - name: Download standard WASI SDK
         shell: bash
         run: |
           set -euo pipefail
-          archive="wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
-          if [ ! -x "$RUNNER_TEMP/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux/bin/clang" ]; then
-            url="https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/${archive}"
-            curl --fail --location --retry 5 --retry-all-errors "$url" -o "$RUNNER_TEMP/$archive"
-            tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
-          fi
-          echo "WASI_SDK_PATH=$RUNNER_TEMP/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux" >> "$GITHUB_ENV"
-          echo "$RUNNER_TEMP/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux/bin" >> "$GITHUB_PATH"
+          archive="wasi-sdk-${WASI_SDK_VERSION}-x86_64-linux.tar.gz"
+          url="https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-24/${archive}"
+          curl --fail --location --retry 5 --retry-all-errors "$url" -o "$RUNNER_TEMP/$archive"
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          echo "WASI_SDK_PATH=$RUNNER_TEMP/wasi-sdk-${WASI_SDK_VERSION}-x86_64-linux" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/wasi-sdk-${WASI_SDK_VERSION}-x86_64-linux/bin" >> "$GITHUB_PATH"
 
-      - name: Save WASI SDK cache
-        if: steps.wasi-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ${{ runner.temp }}/wasi-sdk-${{ env.WASI_SDK_VERSION }}.0-x86_64-linux.tar.gz
-            ${{ runner.temp }}/wasi-sdk-${{ env.WASI_SDK_VERSION }}.0-x86_64-linux
-          key: wasi-sdk-v1-${{ runner.os }}-${{ env.WASI_SDK_VERSION }}
-
-      - name: Install Wasmtime and Python build helpers
+      - name: Install standard Wasmtime
         shell: bash
         run: |
           set -euo pipefail
-          curl --proto '=https' --tlsv1.2 -sSf https://wasmtime.dev/install.sh | bash -s -- --version v36.0.2
-          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
-          python -m pip install --upgrade pip uv maturin build packaging
+          curl --fail --location --retry 5 --retry-all-errors \
+            "https://github.com/bytecodealliance/wasmtime/releases/download/v${WASMTIME_VERSION}/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
+            -o "$RUNNER_TEMP/wasmtime.tar.xz"
+          mkdir -p "$RUNNER_TEMP/wasmtime"
+          tar -xJf "$RUNNER_TEMP/wasmtime.tar.xz" --strip-components=1 -C "$RUNNER_TEMP/wasmtime"
+          echo "$RUNNER_TEMP/wasmtime" >> "$GITHUB_PATH"
+          wasmtime --version
 
-      - name: Check out CPython
-        if: steps.cpython-cache.outputs.cache-hit != 'true'
+      - name: Build from scratch and package delivery
         shell: bash
         run: |
           set -euo pipefail
-          git clone --filter=blob:none --depth 1 --branch "$CPYTHON_REF" \
-            https://github.com/python/cpython.git "$RUNNER_TEMP/cpython"
-          test "$(git -C "$RUNNER_TEMP/cpython" describe --exact-match --tags HEAD)" = "$CPYTHON_REF"
+          rm -rf /root/hermes-build build/external hermes.wasm hermesrt.zip
+          bash build/build-ubuntu-wasi.sh
 
-      - name: Build CPython host and WASI target
-        if: steps.cpython-cache.outputs.cache-hit != 'true'
-        shell: bash
-        working-directory: ${{ runner.temp }}/cpython
-        env:
-          WASI_SDK_PATH: ${{ env.WASI_SDK_PATH }}
-        run: |
-          set -euo pipefail
-          # a-Shell's WASI host does not implement the preview1 socket
-          # imports.  Do not let CPython auto-build _socket: importing it
-          # would make the entire module fail during WASM instantiation.
-          # Host networking is deliberately implemented by the a-Shell loader;
-          # these pure-Python facades are copied into the final runtime below.
-          printf '%s\n' '*disabled*' '_socket socketmodule.c' '_ssl _ssl.c' > Modules/Setup.local
-          # wasi.py performs the required two-stage build: a native build
-          # Python followed by the wasm32-wasip1 host interpreter.
-          python Tools/wasm/wasi.py build --quiet -- \
-            --config-cache --without-ensurepip \
-            py_cv_module__socket=n/a \
-            py_cv_module__ssl=n/a
-
-      - name: Save CPython WASI build cache
-        if: steps.cpython-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ runner.temp }}/cpython
-          key: cpython-wasi-${{ runner.os }}-${{ env.CPYTHON_REF }}-v6-loader-facades
-
-      - name: Export the locked Hermes dependency closure
-        working-directory: hermes-agent
+      - name: Verify the three delivery files
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/build/wasi"
-          uv export --locked --no-dev --no-editable --no-hashes --format requirements.txt \
-            --output-file "$RUNNER_TEMP/hermes-requirements.txt"
-          cp "$RUNNER_TEMP/hermes-requirements.txt" \
-            "$GITHUB_WORKSPACE/build/wasi/hermes-requirements.txt"
+          test -s loader.py
+          test -s hermes.wasm
+          test -s hermesrt.zip
+          HERMES_WASM_COMMAND=wasmtime timeout 30 python3 loader.py sockettest --verbose
+          sha256sum loader.py hermes.wasm hermesrt.zip
 
-      - name: Inventory native distributions
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          root = Path("build/wasi")
-          req = (root / "hermes-requirements.txt").read_text()
-          names = []
-          for line in req.splitlines():
-              line = line.strip()
-              if not line or line.startswith(("#", "-")):
-                  continue
-              match = re.match(r"([A-Za-z0-9_.-]+)(?:[<>=!~]|$)", line)
-              if match:
-                  names.append(match.group(1).lower().replace("-", "_"))
-          # First hard gate: only pydantic-core is built and linked. Other
-          # native packages are deliberately excluded from this test artifact;
-          # their names are preserved for the next porting iteration.
-          native = {
-              "cffi", "cryptography", "psutil", "pillow", "httptools",
-              "uvloop", "nemo_relay", "pydantic_core", "brotlicffi",
-              "pynacl", "orjson", "multidict", "yarl", "frozenlist",
-              "aiohttp", "aiosqlite", "asyncpg",
-          }
-          found = sorted(set(names) & native)
-          required = [name for name in found if name == "pydantic_core"]
-          excluded = [name for name in found if name != "pydantic_core"]
-          (root / "native-distributions.txt").write_text(
-              "\n".join(required) + "\n"
-          )
-          (root / "excluded-native-distributions.txt").write_text(
-              "\n".join(excluded) + "\n"
-          )
-          print("Native distributions retained for the first hard gate:")
-          print("\n".join(required) or "(none)")
-          print("Native distributions excluded from the test artifact:")
-          print("\n".join(excluded) or "(none)")
-          PY
-
-      - name: Prepare trimmed WASI Python dependency set
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          excluded = {
-              "cffi", "cryptography", "psutil", "pillow", "httptools",
-              "uvloop", "nemo_relay", "pydantic_core", "brotlicffi",
-              "pynacl", "orjson", "multidict", "yarl", "frozenlist",
-              "aiohttp", "aiosqlite", "asyncpg",
-          }
-          output = []
-          for raw in Path("build/wasi/hermes-requirements.txt").read_text().splitlines():
-              line = raw.strip().rstrip("\\").strip()
-              if not line or line.startswith(("#", "-")):
-                  continue
-              # Platform-specific Linux/Windows selections are not valid WASI
-              # requirements. They remain visible in the original export.
-              if "sys_platform" in line or "platform_machine" in line:
-                  continue
-              match = re.match(r"([A-Za-z0-9][A-Za-z0-9_.-]*)", line)
-              if not match:
-                  continue
-              if match.group(1).lower().replace("-", "_") in excluded:
-                  continue
-              output.append(line)
-          Path("build/wasi/wasi-requirements.txt").write_text(
-              "\n".join(output) + "\n"
-          )
-          print(f"Retained {len(output)} pure-Python requirement lines")
-          PY
-
-      - name: Build and validate static native extension archives
-        shell: bash
-        env:
-          CPYTHON_ROOT: ${{ runner.temp }}/cpython
-          WASI_SDK_PATH: ${{ env.WASI_SDK_PATH }}
-          CARGO_TARGET_WASM32_WASIP1_LINKER: ${{ env.WASI_SDK_PATH }}/bin/clang
-          PYO3_PYTHON: ${{ runner.temp }}/cpython/cross-build/build/python
-          PYO3_CROSS: '1'
-          PYO3_CROSS_PYTHON_VERSION: '3.13'
-          PYO3_CROSS_PYTHON_IMPLEMENTATION: CPython
-        run: |
-          set -euo pipefail
-          mkdir -p build/native build/diagnostics
-
-          # A native module is accepted only when its source build produces a
-          # wasm32-wasip1 static archive and an exported PyInit_* symbol. A
-          # host wheel, a .so, a .dylib, or a copied prebuilt wheel is rejected.
-          while IFS= read -r distribution; do
-            [ -n "$distribution" ] || continue
-            case "$distribution" in
-              pydantic_core)
-                echo "Building the registered static WASI port: $distribution"
-                ;;
-              *)
-                echo "No verified static WASI builder is registered for native distribution: $distribution" >&2
-                echo "Add a source-to-staticlib builder and PyInit symbol check before enabling it." >&2
-                exit 1
-                ;;
-            esac
-          done < build/wasi/native-distributions.txt
-
-          # pydantic-core is the first mandatory extension. The same builder
-          # contract is used for the remaining entries once their WASI ports
-          # are added: source -> staticlib -> PyInit symbol -> CPython link.
-          python -m pip download --no-binary=:all: --no-deps \
-            'pydantic-core==2.46.4' --dest build/native/src
-          tarball=$(find build/native/src -maxdepth 1 -type f -name 'pydantic_core-*.tar.gz' -print -quit)
-          test -n "$tarball"
-          mkdir -p build/native/pydantic-core
-          tar -xzf "$tarball" --strip-components=1 -C build/native/pydantic-core
-          (
-            cd build/native/pydantic-core
-            cargo rustc --release --target "$WASM_TARGET" \
-              --crate-type staticlib --features pyo3/extension-module
-          )
-          find build/native/pydantic-core/target -type f -name '*.a' \
-            -print | tee build/diagnostics/pydantic-core.archives
-          archive=$(find build/native/pydantic-core/target -type f \
-            \( -name 'lib_pydantic_core.a' -o -name 'libpydantic_core.a' \) \
-            -print -quit)
-          test -n "$archive"
-          "$WASI_SDK_PATH/bin/llvm-nm" -g "$archive" | tee build/diagnostics/pydantic-core.symbols
-          grep -q 'PyInit__pydantic_core' build/diagnostics/pydantic-core.symbols
-          cp "$archive" build/native/libpydantic_core.a
-
-      - name: Save Rust dependency and native build cache
-        if: success() && steps.rust-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            build/native/pydantic-core/target
-          key: pydantic-core-wasi-${{ runner.os }}-${{ env.WASM_TARGET }}-2.46.4-v1
-
-      - name: Link CPython with static extension registry
-        shell: bash
-        env:
-          CPYTHON_ROOT: ${{ runner.temp }}/cpython
-          WASI_SDK_PATH: ${{ env.WASI_SDK_PATH }}
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          path = Path("${{ runner.temp }}/cpython/Programs/python.c")
-          text = path.read_text()
-          marker = "int\nmain(int argc, char **argv)\n"
-          if marker not in text:
-              raise SystemExit("CPython Programs/python.c layout changed; update static registry patch")
-          text = text.replace(
-              marker,
-              "#include <Python.h>\n"
-              "#include <stdlib.h>\n\n"
-              "PyMODINIT_FUNC PyInit__pydantic_core(void);\n\n" + marker,
-              1,
-          )
-          # Python 3.13's minimal Programs/python.c delegates initialization
-          # to Py_BytesMain; register builtins immediately before that call.
-          needle = "    return Py_BytesMain(argc, argv);\n"
-          if needle not in text:
-              raise SystemExit("CPython initialization marker changed; update static registry patch")
-          registration = (
-              "    if (PyImport_AppendInittab(\"_pydantic_core\", "
-              "PyInit__pydantic_core) == -1) {\n"
-              "        Py_FatalError(\"failed to register _pydantic_core\");\n"
-              "    }\n"
-              "    char **hermes_argv = calloc((size_t)argc + 2, sizeof(char *));\n"
-              "    if (hermes_argv == NULL) {\n"
-              "        Py_FatalError(\"failed to allocate Hermes argv\");\n"
-              "    }\n"
-              "    hermes_argv[0] = argv[0];\n"
-              "    if (getenv(\"HERMES_WASI_SMOKE\") != NULL) {\n"
-              "        hermes_argv[1] = \"-c\";\n"
-              "        hermes_argv[2] = \"import pydantic; import pydantic_core; from pydantic_core import SchemaValidator; print(SchemaValidator({'type': 'str'}).validate_python('hermes'))\";\n"
-              "    } else {\n"
-              "        hermes_argv[1] = \"-m\";\n"
-              "        hermes_argv[2] = \"hermes_cli.main\";\n"
-              "    }\n"
-              "    for (int i = 1; i < argc; ++i) {\n"
-              "        hermes_argv[i + 2] = argv[i];\n"
-              "    }\n"
-              "    PyConfig config;\n"
-              "    PyConfig_InitPythonConfig(&config);\n"
-              "    PyConfig_SetString(&config, &config.home, L\"/usr/local\");\n"
-              "    config.module_search_paths_set = 1;\n"
-              "    PyWideStringList_Append(&config.module_search_paths, L\"/python/Lib\");\n"
-              "    PyWideStringList_Append(&config.module_search_paths, L\"/python/site-packages\");\n"
-              "    PyWideStringList_Append(&config.module_search_paths, L\"/hermes-agent\");\n"
-              "    PyWideStringList_Append(&config.module_search_paths, L\"/hermes-webui\");\n"
-              "    PyStatus status = PyConfig_SetBytesArgv(&config, argc + 2, hermes_argv);\n"
-              "    if (PyStatus_Exception(status)) {\n"
-              "        PyConfig_Clear(&config);\n"
-              "        Py_ExitStatusException(status);\n"
-              "    }\n"
-              "    status = Py_InitializeFromConfig(&config);\n"
-              "    PyConfig_Clear(&config);\n"
-              "    if (PyStatus_Exception(status)) {\n"
-              "        Py_ExitStatusException(status);\n"
-              "    }\n"
-          )
-          replacement = registration + "    return Py_RunMain();\n"
-          text = text.replace(needle, replacement, 1)
-          path.write_text(text)
-          PY
-
-          mkdir -p "$CPYTHON_ROOT/build/native"
-          cp "$GITHUB_WORKSPACE/build/native/libpydantic_core.a" \
-            "$CPYTHON_ROOT/build/native/libpydantic_core.a"
-          # Re-run the target link after the registry source and archive exist.
-          make -C "$CPYTHON_ROOT/cross-build/wasm32-wasip1" -j"$(nproc)" \
-            LDFLAGS="-Wl,--whole-archive $CPYTHON_ROOT/build/native/libpydantic_core.a -Wl,--no-whole-archive"
-
-      - name: Assemble runtime artifact
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf dist
-          mkdir -p dist/python/Lib dist/python/site-packages dist/usr/local/lib
-          cp "${{ runner.temp }}/cpython/cross-build/wasm32-wasip1/python.wasm" dist/python/
-          cp -R "${{ runner.temp }}/cpython/Lib/"* dist/python/Lib/
-          # The embedded PyConfig search path starts at /python/Lib, so the
-          # stdio facade must live there to be loaded before hermes_cli.
-          cp sitecustomize.py wasi_loader.py dist/python/Lib/
-          cp wasi_runtime/_socket.py wasi_runtime/_ssl.py dist/python/Lib/
-          # CPython must find encodings before PYTHONPATH is processed.
-          cp -R dist/python/Lib dist/usr/local/lib/python3.13
-          # Install only the trimmed pure-Python closure. Native packages are
-          # intentionally absent so the artifact exposes the next real import
-          # failures instead of silently embedding host wheels.
-          if [ -s build/wasi/wasi-requirements.txt ]; then
-            python -m pip install --disable-pip-version-check \
-              --target dist/python/site-packages --no-deps \
-              -r build/wasi/wasi-requirements.txt
-          fi
-          # pydantic-core's Python wrapper is pure Python; its _pydantic_core
-          # native submodule is provided by the CPython builtin registration.
-          mkdir -p dist/python/site-packages/pydantic_core
-          cp -R build/native/pydantic-core/python/pydantic_core/. \
-            dist/python/site-packages/pydantic_core/
-          python - <<'PY'
-          from pathlib import Path
-          init = Path("dist/python/site-packages/pydantic_core/__init__.py")
-          text = init.read_text()
-          old = "from ._pydantic_core import"
-          if old not in text:
-              raise SystemExit("pydantic-core wrapper import layout changed")
-          init.write_text(text.replace(old, "from _pydantic_core import", 1))
-          PY
-          cp -R hermes-agent dist/hermes-agent
-          cp -R hermes-webui dist/hermes-webui
-          cp loader.py wasi_loader.py sitecustomize.py dist/
-          cp wasi_runtime/_socket.py wasi_runtime/_ssl.py dist/
-          test -s dist/loader.py
-          test -s dist/_socket.py
-          test -s dist/_ssl.py
-          cp build/wasi/hermes-requirements.txt \
-            build/wasi/wasi-requirements.txt \
-            build/wasi/native-distributions.txt \
-            build/wasi/excluded-native-distributions.txt dist/
-          printf '%s\n' \
-            '{' \
-            '  "target": "wasm32-wasip1",' \
-            "  \"cpython_ref\": \"${CPYTHON_REF}\"," \
-            "  \"hermes_ref\": \"${HERMES_REF}\"," \
-            '  "static_extensions": ["_pydantic_core"],' \
-            '  "loader_required": true,' \
-            '  "forwarded_capabilities": ["io.write", "socket", "ssl"],' \
-            '  "native_extensions_excluded": true,' \
-            '  "status": "loader-mediated-test-artifact"' \
-            '}' > dist/manifest.json
-
-          # The command itself is the WASI binary, matching a-Shell-commands.
-          # Supporting Python files remain beside it because CPython imports
-          # them through the embedded /python and /hermes-* search paths.
-          cp dist/python/python.wasm dist/hermes
-          file dist/hermes | tee build/diagnostics/hermes-wasm.file
-          test -s dist/hermes
-          python - <<'PY'
-          from pathlib import Path
-
-          data = Path("dist/hermes").read_bytes()
-          if data[:4] != b"\x00asm":
-              raise SystemExit("dist/hermes is not a WASM binary")
-
-          def u32(pos):
-              value = 0
-              shift = 0
-              while True:
-                  byte = data[pos]
-                  pos += 1
-                  value |= (byte & 0x7f) << shift
-                  if byte < 0x80:
-                      return value, pos
-                  shift += 7
-
-          def name(pos):
-              length, pos = u32(pos)
-              end = pos + length
-              return data[pos:end].decode("utf-8"), end
-
-          pos = 8
-          socket_imports = []
-          while pos < len(data):
-              section, pos = u32(pos)
-              size, pos = u32(pos)
-              end = pos + size
-              if section == 2:
-                  count, cur = u32(pos)
-                  for _ in range(count):
-                      module, cur = name(cur)
-                      field, cur = name(cur)
-                      kind = data[cur]
-                      cur += 1
-                      if kind == 0:
-                          _, cur = u32(cur)
-                      elif kind == 1:
-                          cur += 4
-                      elif kind == 2:
-                          flags, cur = u32(cur)
-                          _, cur = u32(cur)
-                          if flags & 1:
-                              _, cur = u32(cur)
-                      elif kind == 3:
-                          cur += 2
-                      if module == "wasi_snapshot_preview1" and field.startswith("sock_"):
-                          socket_imports.append(f"{module}:{field}")
-                  break
-              pos = end
-          if socket_imports:
-              raise SystemExit("unsupported WASI socket imports: " + ", ".join(socket_imports))
-          print("WASI socket import gate OK")
-          PY
-
-      - name: Run loader-mediated WASI smoke test
-        id: smoke
-        continue-on-error: true
-        shell: bash
-        env:
-          CPYTHON_ROOT: ${{ runner.temp }}/cpython
-          HERMES_WASI_SMOKE: '1'
-        run: |
-          set -euo pipefail
-          test -s dist/hermes
-          python loader.py --wasm-command wasmtime dist/hermes
-
-      - name: Test host capability broker
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m unittest -v tests.test_wasi_capability_broker
-
-      - name: Verify loader is the only supported execution path
-        id: single-file-smoke
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s dist/hermes
-          python - <<'PY'
-          from pathlib import Path
-          assert Path('dist/hermes').read_bytes()[:4] == b'\x00asm'
-          print('direct WASI artifact magic OK')
-          PY
-          python loader.py --wasm-command wasmtime dist/hermes --version \
-            > build/diagnostics/hermes-launcher.stdout \
-            2> build/diagnostics/hermes-launcher.stderr
-
-      - name: Upload trimmed test artifact and diagnostics
-        if: always()
+      - name: Upload delivery artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hermes-cpython-wasi-trimmed-${{ github.sha }}
-          path: |
-            dist/hermes
-            dist/usr/
-            dist/python/
-            dist/hermes-agent/
-            dist/hermes-webui/
-            dist/loader.py
-            dist/wasi_loader.py
-            dist/_socket.py
-            dist/_ssl.py
-            dist/sitecustomize.py
-            dist/*.txt
-            dist/manifest.json
+          name: hermes-ubuntu-wasi-${{ github.sha }}
           if-no-files-found: error
-          retention-days: 14
+          path: |
+            loader.py
+            hermes.wasm
+            hermesrt.zip
 
-      - name: Upload build diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Publish optional release
+        if: ${{ inputs.publish_release == true }}
+        uses: softprops/action-gh-release@v2
         with:
-          name: hermes-cpython-wasi-diagnostics-${{ github.sha }}
-          path: |
-            build/diagnostics/
-            build/wasi/native-distributions.txt
-            build/wasi/excluded-native-distributions.txt
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Fail if the first hard gate failed
-        if: steps.smoke.outcome == 'failure' || steps.single-file-smoke.outcome == 'failure'
-        shell: bash
-        run: |
-          echo 'The single-file WASI artifact was uploaded for diagnosis, but a hard gate failed.' >&2
-          exit 1
+          tag_name: ${{ inputs.release_tag || format('hermes-{0}-{1}', github.ref_name, github.run_number) }}
+          name: Hermes Ubuntu WASI ${{ inputs.release_tag || github.run_number }}
+          generate_release_notes: true
+          files: |
+            loader.py
+            hermes.wasm
+            hermesrt.zip
