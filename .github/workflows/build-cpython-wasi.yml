@@ -37,6 +37,7 @@ jobs:
       WASMTIME_VERSION: '48.0.2'
       HERMES_AGENT_COMMIT: '2246c245f51e03eb6a151d19119009156e84659a'
       HERMES_WEBUI_COMMIT: 'e36f77389191fe9d81cd3a7416772e2f7b022e19'
+      BUILD_ROOT: ${{ runner.temp }}/hermes-build
 
     steps:
       - name: Check out repository
@@ -95,7 +96,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /root/hermes-build build/external hermes.wasm hermesrt.zip
+          rm -rf "$BUILD_ROOT" build/external hermes.wasm hermesrt.zip
           bash build/build-ubuntu-wasi.sh
 
       - name: Verify the three delivery files
