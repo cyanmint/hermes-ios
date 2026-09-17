@@ -108,6 +108,7 @@ int main(int argc, char **argv) {
     const wchar_t *runtime_paths[] = {
         L"./hermesrt.zip/python",
         L"./hermesrt.zip/hermes",
+        L"./hermesrt.zip/hermes-webui",
         L"./hermesrt.zip/python/site-packages",
     };
     for (size_t i = 0; i < sizeof(runtime_paths) / sizeof(runtime_paths[0]); ++i) {
