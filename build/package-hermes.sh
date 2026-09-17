@@ -259,6 +259,24 @@ with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as output:
         data = data.replace(b'if os.environ.get("HERMES_DISABLE_TUI_THREADS") != "1":', b'if False:')
         data = data.replace(b'if os.environ.get("HERMES_DISABLE_TUI_SPINNER") != "1":', b'if False:')
         data = data.replace(b'if os.environ.get("HERMES_DEFER_AGENT_STARTUP") != "1":', b'if False:')
+        if info.filename == "bootstrap.py":
+            text = data.decode("utf-8")
+            for newline in ("\r\r\n", "\r\n", "\n"):
+                marker = "def discover_agent_dir() -> Path | None:" + newline
+                embedded = marker + "    if REPO_ROOT.name == \"hermesrt.zip\":" + newline + "        return REPO_ROOT" + newline
+                if marker in text:
+                    text = text.replace(marker, embedded, 1)
+                    break
+            data = text.encode("utf-8")
+        if info.filename == "api/config.py":
+            text = data.decode("utf-8")
+            for newline in ("\r\r\n", "\r\n", "\n"):
+                marker = "def _discover_agent_dir() -> Path:" + newline
+                embedded = marker + "    if REPO_ROOT.name == \"hermesrt.zip\":" + newline + "        return REPO_ROOT" + newline
+                if marker in text:
+                    text = text.replace(marker, embedded, 1)
+                    break
+            data = text.encode("utf-8")
         output.writestr(info.filename, data)
 PY
 cp "$STAGE_ZIP" "$RUNTIME_ARCHIVE"
