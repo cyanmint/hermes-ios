@@ -5,8 +5,7 @@
 - `./hermes`：静态链接 CPython 与所需标准库 native modules 的原生 Mach-O 可执行文件
 - `hermesrt.zip`：完整 Python 标准库、Hermes Agent 和 WebUI 运行时
 
-`loader.py` 不属于新交付路径；`./hermes` 直接启动 `hermes_cli.main`，使用 iOS 原生
-socket/TLS 能力，不再经过 WASI capability broker。`asdbd.py` 仍仅用于设备调试与验证。
+`./hermes` 直接启动 `hermes_cli.main`，使用 iOS 原生 socket/TLS 能力。
 
 ## 构建
 

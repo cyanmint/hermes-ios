@@ -1,11 +1,10 @@
 # Build outputs and downloaded dependencies
 build/external/
 
-# Locally generated runtime delivery artifacts
-hermes.wasm
+# Locally generated jailbreak iOS delivery artifacts
+/hermes
+/hermesrt.zip
 /hermes-runtime/
 /hermes-runtime.zip
-/hermesrt.zip
-/hermes
 __pycache__/
 tests/**/__pycache__/

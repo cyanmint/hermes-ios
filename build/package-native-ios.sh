@@ -21,7 +21,6 @@ for package in acp_adapter agent cron gateway hermes_cli plugins providers tools
   [ -d "$HERMES_SOURCE/$package" ] && cp -a "$HERMES_SOURCE/$package" "$STAGE/lib/python3.13/site-packages/"
 done
 cp -a "$HERMES_SOURCE"/*.py "$STAGE/lib/python3.13/site-packages/" 2>/dev/null || true
-cp -a "$ROOT/overlay/hermes/." "$STAGE/lib/python3.13/site-packages/"
 if [ -d "$WEBUI_SOURCE/api" ]; then
   cp -a "$WEBUI_SOURCE/api" "$STAGE/lib/python3.13/"
   cp -a "$WEBUI_SOURCE/static" "$STAGE/lib/python3.13/" 2>/dev/null || true
@@ -29,15 +28,12 @@ if [ -d "$WEBUI_SOURCE/api" ]; then
     [ -f "$WEBUI_SOURCE/$module" ] && cp "$WEBUI_SOURCE/$module" "$STAGE/lib/python3.13/"
   done
 fi
-cp -a "$ROOT/overlay/python/." "$STAGE/lib/python3.13/" 2>/dev/null || true
 cp "$ROOT/native/sitecustomize.py" "$STAGE/lib/python3.13/sitecustomize.py"
 # CPython's iOS build emits native extensions as Mach-O shared modules.  They
 # remain inside the single runtime archive; sitecustomize extracts them to a
 # private temporary directory before Hermes imports the Agent.
 find "$TARGET_ROOT/Modules" -maxdepth 1 -type f -name '*.iphoneos.so' \
   -exec cp {} "$STAGE/lib/python3.13/site-packages/" \; 2>/dev/null || true
-find "$STAGE" -type f -name '*.wasm' -delete
-
 python3 - "$STAGE" "$ARCHIVE" <<'PY'
 import os, sys, zipfile
 root, output = sys.argv[1:]
@@ -73,6 +69,6 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     names = set(z.namelist())
     assert 'encodings/__init__.py' in names
     assert 'hermes_cli/main.py' in names
-    assert not any(n.endswith(('.so', '.dylib', '.pyd', '.wasm')) for n in names)
+    assert not any(n.endswith(('.so', '.dylib', '.pyd')) for n in names)
 PY
 cp "$ARCHIVE" "$ROOT/hermesrt.zip"
