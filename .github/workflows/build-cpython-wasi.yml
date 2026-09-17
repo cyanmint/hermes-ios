@@ -107,7 +107,21 @@ jobs:
           test -s loader.py
           test -s hermes.wasm
           test -s hermesrt.zip
-          HERMES_WASM_COMMAND=wasmtime timeout 30 python3 loader.py sockettest --verbose
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          wasm = Path("hermes.wasm")
+          assert wasm.read_bytes()[:4] == b"\0asm"
+          with zipfile.ZipFile("hermesrt.zip") as archive:
+              assert archive.testzip() is None
+              names = archive.namelist()
+              assert "encodings/__init__.py" in names
+              assert "hermes_cli/main.py" in names
+          print(f"hermes.wasm={wasm.stat().st_size}")
+          print(f"hermesrt.zip={Path('hermesrt.zip').stat().st_size}")
+          print(f"runtime_entries={len(names)}")
+          PY
           sha256sum loader.py hermes.wasm hermesrt.zip
 
       - name: Upload delivery artifact

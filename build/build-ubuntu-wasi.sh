@@ -33,9 +33,40 @@ export HERMES_AGENT_COMMIT=${HERMES_AGENT_COMMIT:-2246c245f51e03eb6a151d19119009
 export HERMES_WEBUI_COMMIT=${HERMES_WEBUI_COMMIT:-e36f77389191fe9d81cd3a7416772e2f7b022e19}
 FORCE_REBUILD=1 bash "$ROOT/build/build-local-wasi.sh"
 
+printf '==> resolving pure-Python Hermes dependencies\n'
+python3 -m pip install --disable-pip-version-check --quiet uv
+requirements="$BUILD_ROOT/hermes-requirements.txt"
+uv export --project "$ROOT/build/external/hermes-agent" --locked \
+  --no-dev --no-editable --no-hashes --format requirements.txt \
+  --output-file "$requirements"
+sed -i '/^\.$/d' "$requirements"
+wheelhouse="$BUILD_ROOT/pure-wheelhouse"
+site_packages="$BUILD_ROOT/loader-artifact/lib/python3.13/site-packages"
+rm -rf "$wheelhouse"
+mkdir -p "$wheelhouse" "$site_packages"
+python3 -m pip download --disable-pip-version-check --only-binary=:all: \
+  --dest "$wheelhouse" -r "$requirements"
+python3 - "$wheelhouse" "$site_packages" <<'PY'
+import sys
+import zipfile
+from pathlib import Path
+
+wheelhouse, destination = map(Path, sys.argv[1:])
+for wheel in wheelhouse.glob("*.whl"):
+    with zipfile.ZipFile(wheel) as archive:
+        for member in archive.infolist():
+            name = member.filename
+            if name.endswith((".so", ".pyd", ".dll")):
+                continue
+            archive.extract(member, destination)
+        print(f"embedded {wheel.name}")
+PY
+
 mkdir -p "$BUILD_ROOT/hermes-artifact"
 cp "$BUILD_ROOT/loader-build/cross-build/wasm32-wasip1/python.wasm" \
   "$BUILD_ROOT/hermes-artifact/python.wasm"
+rm -rf "$BUILD_ROOT/hermes-artifact/lib"
+cp -a "$BUILD_ROOT/loader-artifact/lib" "$BUILD_ROOT/hermes-artifact/lib"
 
 printf '==> packaging hermes.wasm and hermesrt.zip\n'
 SOURCE_ARTIFACT="$BUILD_ROOT/hermes-artifact" \
