@@ -121,11 +121,14 @@ fi
 # The a-Shell WASI process has a small thread budget.  Avoid optional Hermes
 # background workers during CLI startup; the interactive command itself stays
 # synchronous and does not need these maintenance threads.
-python3 - "$STAGE_ROOT/lib/python3.13/site-packages/hermes_cli/main.py" "$STAGE_ROOT/lib/python3.13/site-packages/cli.py" "$STAGE_ROOT/lib/python3.13/site-packages/hermes_cli/cli_info_mixin.py" "$STAGE_ROOT/lib/python3.13/site-packages/prompt_toolkit/patch_stdout.py" "$STAGE_ROOT/lib/python3.13/site-packages/hermes_cli/cli_status_bar_mixin.py" <<'PY'
+CLI_PATH="$STAGE_ROOT/lib/python3.13/site-packages/cli.py"
+[ -f "$CLI_PATH" ] || CLI_PATH="$STAGE_ROOT/lib/python3.13/cli.py"
+python3 - "$STAGE_ROOT/lib/python3.13/site-packages/hermes_cli/main.py" "$CLI_PATH" "$STAGE_ROOT/lib/python3.13/site-packages/hermes_cli/cli_info_mixin.py" "$STAGE_ROOT/lib/python3.13/site-packages/prompt_toolkit/patch_stdout.py" "$STAGE_ROOT/lib/python3.13/site-packages/hermes_cli/cli_status_bar_mixin.py" "$STAGE_ROOT/lib/python3.13/server.py" <<'PY'
 import sys
+import re
 from pathlib import Path
 
-main_path, cli_path, info_path, patch_stdout_path, status_path = map(Path, sys.argv[1:])
+main_path, cli_path, info_path, patch_stdout_path, status_path, server_path = map(Path, sys.argv[1:])
 main = main_path.read_text(encoding="utf-8")
 old_main = "    if not _is_tui_chat_launch(args):\n"
 new_main = "    if not _is_tui_chat_launch(args) and os.environ.get(\"HERMES_DISABLE_BACKGROUND_DISCOVERY\") != \"1\":\n"
@@ -134,10 +137,7 @@ if old_main in main:
 main_path.write_text(main, encoding="utf-8", newline="\n")
 
 cli = cli_path.read_text(encoding="utf-8")
-old_prewarm = '            threading.Thread(target=_prewarm_agent_runtime, name="agent-runtime-prewarm", daemon=True).start()\n'
-new_prewarm = '            if os.environ.get("HERMES_DISABLE_STARTUP_PREWARM") != "1":\n                threading.Thread(target=_prewarm_agent_runtime, name="agent-runtime-prewarm", daemon=True).start()\n'
-if old_prewarm in cli:
-    cli = cli.replace(old_prewarm, new_prewarm, 1)
+
 old_banner = "                threading.Thread(\n                    target=_refresh_banner_snapshot, name=\"banner-snapshot-refresh\", daemon=True,\n                ).start()\n"
 new_banner = "                if os.environ.get(\"HERMES_DISABLE_STARTUP_PREWARM\") != \"1\":\n                    threading.Thread(\n                        target=_refresh_banner_snapshot, name=\"banner-snapshot-refresh\", daemon=True,\n                    ).start()\n"
 info = info_path.read_text(encoding="utf-8")
@@ -148,16 +148,15 @@ old_cli = '    threading.Thread(target=auto_prune_from_config, name="checkpoint-
 new_cli = '    if os.environ.get("HERMES_DISABLE_BACKGROUND_CHECKPOINTS") != "1":\n        threading.Thread(target=auto_prune_from_config, name="checkpoint-auto-prune", daemon=True).start()\n'
 if old_cli in cli:
     cli = cli.replace(old_cli, new_cli, 1)
-import re
 for thread_name, label in [
     ("_tui_spinner_loop", "HERMES_DISABLE_TUI_SPINNER"),
     ("_tui_process_loop", "HERMES_DISABLE_TUI_THREADS"),
 ]:
-    pattern = rf'(?m)^(?P<indent>\s*)threading\.Thread\(target=self\.{re.escape(thread_name)}, daemon=True\)\.start\(\)\s*$'
+    pattern = rf'(?m)^(?P<indent>[ ]*)threading\.Thread\(target=self\.{re.escape(thread_name)}, daemon=True\)\.start\(\s*\)$'
     replacement = rf'\g<indent>if os.environ.get("{label}") != "1":\n\g<indent>    threading.Thread(target=self.{thread_name}, daemon=True).start()'
     cli, count = re.subn(pattern, replacement, cli, count=1)
     pass
-pattern = r'(?m)^(?P<indent>\s*)threading\.Thread\(target=self\._tui_wake_startup, daemon=True, name="wake-startup"\)\.start\(\)\s*$'
+pattern = r'(?m)^(?P<indent>[ ]*)threading\.Thread\(target=self\._tui_wake_startup, daemon=True, name="wake-startup"\)\.start\(\s*\)$'
 replacement = r'\g<indent>if os.environ.get("HERMES_DISABLE_TUI_THREADS") != "1":\n\g<indent>    threading.Thread(target=self._tui_wake_startup, daemon=True, name="wake-startup").start()'
 cli, count = re.subn(pattern, replacement, cli, count=1)
 pass
@@ -178,6 +177,39 @@ new_pet_join = "        if thread is not None:\n            try:\n              
 if old_pet_join in status:
     status = status.replace(old_pet_join, new_pet_join, 1)
 status_path.write_text(status, encoding="utf-8", newline="\n")
+server = server_path.read_text(encoding="utf-8")
+server = server.replace(
+    "from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer",
+    "from http.server import BaseHTTPRequestHandler, HTTPServer",
+    1,
+)
+server = server.replace("class QuietHTTPServer(ThreadingHTTPServer):", "class QuietHTTPServer(HTTPServer):", 1)
+server_path.write_text(server, encoding="utf-8", newline="\n")
+# Source snapshots place the TUI entrypoint in different locations. Apply the
+# thread-budget guards once more over the final staging tree so no layout
+# variant can reintroduce an unconditional worker.
+import re
+for candidate in Path(sys.argv[1]).rglob("*.py"):
+    text = candidate.read_text(encoding="utf-8")
+    original = text
+    text = re.sub(
+        r'(?m)^(?P<i>[ ]*)threading\.Thread\(target=_prewarm_agent_runtime, name="agent-runtime-prewarm", daemon=True\)\.start\(\)\s*$',
+        r'\g<i>if os.environ.get("HERMES_DISABLE_STARTUP_PREWARM") != "1":\n\g<i>    threading.Thread(target=_prewarm_agent_runtime, name="agent-runtime-prewarm", daemon=True).start()',
+        text,
+    )
+    text = re.sub(
+        r'(?m)^(?P<i>[ ]*)threading\.Thread\(target=self\._tui_(spinner_loop|process_loop), daemon=True\)\.start\(\s*\)$',
+        r'\g<i>if os.environ.get("HERMES_DISABLE_TUI_THREADS") != "1":\n\g<i>    threading.Thread(target=self._tui_\1, daemon=True).start()',
+        text,
+    )
+    text = re.sub(
+        r'(?ms)^(?P<i>[ ]*)threading\.Thread\(\n(?P<body>.*?target=_refresh_banner_snapshot.*?\n\s*\)\.start\(\))',
+        r'\g<i>if os.environ.get("HERMES_DISABLE_STARTUP_PREWARM") != "1":\n\g<i>    threading.Thread(\n\g<body>\n\g<i>    )',
+        text,
+        count=1,
+    )
+    if text != original:
+        candidate.write_text(text, encoding="utf-8", newline="\n")
 PY
 
 # Build the complete zip in WSL and copy one file across the Windows
@@ -209,6 +241,25 @@ for directory, _, names in os.walk(root):
 with zipfile.ZipFile(output, "w", zipfile.ZIP_STORED) as archive:
     for target, source in sorted(targets.items()):
         archive.write(source, target, compress_type=zipfile.ZIP_STORED)
+PY
+# Apply the final source-independent guard to the archive entries actually
+# imported at runtime; the dependency ZIP may contain an older Hermes copy.
+python3 - "$STAGE_ZIP" <<'PY'
+import sys, zipfile
+path = sys.argv[1]
+old = b'                threading.Thread(\n                    target=_refresh_banner_snapshot, name="banner-snapshot-refresh", daemon=True,\n                ).start()'
+new = b'                if os.environ.get("HERMES_DISABLE_STARTUP_PREWARM") != "1":\n                    threading.Thread(\n                        target=_refresh_banner_snapshot, name="banner-snapshot-refresh", daemon=True,\n                    ).start()'
+with zipfile.ZipFile(path, "r") as source:
+    entries = [(info, source.read(info.filename)) for info in source.infolist()]
+with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as output:
+    for info, data in entries:
+        if info.filename == "hermes_cli/cli_info_mixin.py":
+            data = data.replace(old, new, 1)
+        data = data.replace(b'if os.environ.get("HERMES_DISABLE_STARTUP_PREWARM") != "1":', b'if False:')
+        data = data.replace(b'if os.environ.get("HERMES_DISABLE_TUI_THREADS") != "1":', b'if False:')
+        data = data.replace(b'if os.environ.get("HERMES_DISABLE_TUI_SPINNER") != "1":', b'if False:')
+        data = data.replace(b'if os.environ.get("HERMES_DEFER_AGENT_STARTUP") != "1":', b'if False:')
+        output.writestr(info.filename, data)
 PY
 cp "$STAGE_ZIP" "$RUNTIME_ARCHIVE"
 

@@ -14,6 +14,7 @@ _default_timeout = None
 class error(OSError): pass
 class timeout(error): pass
 class gaierror(error): pass
+class herror(error): pass
 def getdefaulttimeout(): return _default_timeout
 def setdefaulttimeout(value):
     global _default_timeout
@@ -23,6 +24,10 @@ def gethostname(): return wasi_loader.call("socket.hostname").get("name", "local
 def getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     result = wasi_loader.call("socket.resolve", {"host": host, "port": port, "family": family, "type": type, "proto": proto, "flags": flags})
     return [tuple(item) for item in result.get("addresses", [])]
+def gethostbyaddr(host):
+    return (str(host), [], [str(host)])
+def poll(ids, timeout=None):
+    return wasi_loader.call("socket.poll", {"ids": list(ids), "timeout": timeout}).get("ready", [])
 class socket:
     __slots__ = ("_id", "_family", "_type", "_proto", "timeout", "_closed")
     def __init__(self, family=AF_INET, type=SOCK_STREAM, proto=0, fileno=None):
@@ -36,26 +41,19 @@ class socket:
     @property
     def proto(self): return self._proto
     def connect(self, address):
-        host, port = address[:2]
-        wasi_loader.call("socket.connect", {"id": self._id, "host": host, "port": port, "timeout": self.timeout})
+        host, port = address[:2]; wasi_loader.call("socket.connect", {"id": self._id, "host": host, "port": port, "timeout": self.timeout})
     def bind(self, address):
-        host, port = address[:2]
-        wasi_loader.call("socket.bind", {"id": self._id, "host": host, "port": port})
-    def listen(self, backlog=0):
-        wasi_loader.call("socket.listen", {"id": self._id, "backlog": int(backlog)})
+        host, port = address[:2]; wasi_loader.call("socket.bind", {"id": self._id, "host": host, "port": port})
+    def listen(self, backlog=0): wasi_loader.call("socket.listen", {"id": self._id, "backlog": int(backlog)})
     def accept(self):
         result = wasi_loader.call("socket.accept", {"id": self._id, "timeout": self.timeout})
         return socket(fileno=int(result["id"])), tuple(result["address"])
-    def send(self, data, flags=0):
-        return int(wasi_loader.call("socket.send", {"id": self._id, "data": {"encoding": "base64", "data": base64.b64encode(bytes(data)).decode("ascii")}, "flags": flags}).get("sent", 0))
-    def sendall(self, data, flags=0):
-        wasi_loader.call("socket.sendall", {"id": self._id, "data": {"encoding": "base64", "data": base64.b64encode(bytes(data)).decode("ascii")}, "flags": flags})
-    def recv(self, bufsize, flags=0):
-        return base64.b64decode(wasi_loader.call("socket.recv", {"id": self._id, "size": bufsize, "flags": flags, "timeout": self.timeout}).get("data", ""))
+    def send(self, data, flags=0): return int(wasi_loader.call("socket.send", {"id": self._id, "data": {"encoding": "base64", "data": base64.b64encode(bytes(data)).decode("ascii")}, "flags": flags}).get("sent", 0))
+    def sendall(self, data, flags=0): wasi_loader.call("socket.sendall", {"id": self._id, "data": {"encoding": "base64", "data": base64.b64encode(bytes(data)).decode("ascii")}, "flags": flags})
+    def recv(self, bufsize, flags=0): return base64.b64decode(wasi_loader.call("socket.recv", {"id": self._id, "size": bufsize, "flags": flags, "timeout": self.timeout}).get("data", ""))
     def recv_into(self, buffer, nbytes=0, flags=0):
         data = self.recv(nbytes or len(buffer), flags); buffer[:len(data)] = data; return len(data)
-    def settimeout(self, value):
-        self.timeout = value; wasi_loader.call("socket.timeout", {"id": self._id, "timeout": value})
+    def settimeout(self, value): self.timeout = value; wasi_loader.call("socket.timeout", {"id": self._id, "timeout": value})
     def gettimeout(self): return self.timeout
     def setblocking(self, flag): self.settimeout(None if flag else 0.0)
     def getsockopt(self, level, option, *args): return wasi_loader.call("socket.getopt", {"id": self._id, "level": level, "option": option}).get("value", 0)
@@ -66,11 +64,7 @@ class socket:
     def close(self):
         if not self._closed: self._closed = True; wasi_loader.call("socket.close", {"id": self._id})
     def fileno(self): return self._id
-    def detach(self):
-        sid = self._id
-        self._id = -1
-        self._closed = True
-        return sid
+    def detach(self): self._closed = True; sid = self._id; self._id = -1; return sid
     def __enter__(self): return self
     def __exit__(self, *_): self.close()
     def makefile(self, mode="r", buffering=None, **kwargs): return _SocketFile(self, mode)
@@ -88,3 +82,4 @@ class _SocketFile:
     def close(self): self.sock.close()
     def __enter__(self): return self
     def __exit__(self, *_): self.close()
+__all__ = [name for name in globals() if not name.startswith("_")]

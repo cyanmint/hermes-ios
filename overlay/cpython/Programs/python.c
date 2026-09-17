@@ -55,6 +55,7 @@ main(int argc, char **argv)
     PyConfig_InitPythonConfig(&config);
     config.parse_argv = 0;
     config.home = Py_DecodeLocale("/", NULL);
+    config.pathconfig_warnings = 1;
     config.module_search_paths_set = 1;
     const wchar_t *search_paths[] = {
         L"/Lib",

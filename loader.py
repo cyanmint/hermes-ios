@@ -152,6 +152,11 @@ def _socket_dispatch(sockets: dict[int, socket.socket], params: dict[str, Any]) 
     sid = params.get("id")
     if os.environ.get("HERMES_SOCKET_VERBOSE") == "1":
         print(f"SOCKETBROKER_REQUEST method={method!r} id={sid!r} params={params!r}", file=sys.stderr, flush=True)
+    if method == "socket.poll":
+        timeout = params.get("timeout")
+        ids = [value for value in params.get("ids", []) if isinstance(value, int) and value in sockets]
+        ready, _, _ = select.select([sockets[value] for value in ids], [], [], timeout)
+        return {"ready": [value for value in ids if sockets[value] in ready]}
     if method == "socket.hostname":
         return {"name": socket.gethostname()}
     if method == "socket.resolve":
@@ -166,7 +171,13 @@ def _socket_dispatch(sockets: dict[int, socket.socket], params: dict[str, Any]) 
         raise LoaderError("SOCKET_ERROR", "unknown socket id")
     sock = sockets[sid]
     if method == "socket.connect":
-        sock.settimeout(params.get("timeout")); sock.connect((params["host"], params["port"])); return {}
+        sock.settimeout(params.get("timeout"))
+        try:
+            sock.connect((params["host"], params["port"]))
+        except OSError as exc:
+            if getattr(exc, "errno", None) not in {11, 36, 115}:
+                raise
+        return {}
     if method == "socket.bind":
         sock.bind((params["host"], params["port"])); return {}
     if method == "socket.listen":
