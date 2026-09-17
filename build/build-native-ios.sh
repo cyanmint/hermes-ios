@@ -9,7 +9,7 @@ SDK_REPO=${IOS_SDK_REPOSITORY:-https://github.com/theos/sdks.git}
 SDK_ROOT=${IOS_SDK_ROOT:-$BUILD_ROOT/sdks/iPhoneOS${SDK_VERSION}.sdk}
 CPYTHON_REF=${CPYTHON_REF:-v3.13.9}
 CPYTHON_ROOT=${CPYTHON_ROOT:-$BUILD_ROOT/cpython}
-HOST_PYTHON=${HOST_PYTHON:-$BUILD_ROOT/host-python/python}
+HOST_PYTHON=${HOST_PYTHON:-$BUILD_ROOT/host-python/bin/python3.13}
 TARGET_ROOT=${TARGET_ROOT:-$BUILD_ROOT/target}
 TOOLBIN=$BUILD_ROOT/bin
 
@@ -71,16 +71,17 @@ int __isPlatformVersionAtLeast(uint32_t platform, uint32_t major, uint32_t minor
 EOF
 clang --target=arm64-apple-ios${DEPLOYMENT_TARGET} -isysroot "$SDK_ROOT" \
   -c "$TARGET_ROOT/ios_compat.c" -o "$TARGET_ROOT/ios_compat.o"
-PATH="$TOOLBIN:/usr/bin:/bin" CC=arm64-apple-ios-clang \
-  LIBS="$TARGET_ROOT/ios_compat.o" \
-  py_cv_module__lzma=n/a py_cv_module__bz2=n/a py_cv_module__dbm=n/a \
-  py_cv_module__gdbm=n/a py_cv_module_readline=n/a py_cv_module__curses=n/a \
-  py_cv_module__curses_panel=n/a py_cv_module__blake2=n/a py_cv_module__ctypes=n/a \
-  py_cv_module__uuid=n/a \
-  "$TARGET_ROOT/configure" --host=arm64-apple-ios${DEPLOYMENT_TARGET} \
-  --build=x86_64-pc-linux-gnu --with-build-python="$HOST_PYTHON" \
-  --without-ensurepip --disable-test-modules --disable-ipv6 --with-lto=no \
-  --enable-framework="$TARGET_ROOT/framework"
+(cd "$TARGET_ROOT" && \
+  PATH="$TOOLBIN:/usr/bin:/bin" CC=arm64-apple-ios-clang \
+    LIBS="$TARGET_ROOT/ios_compat.o" \
+    py_cv_module__lzma=n/a py_cv_module__bz2=n/a py_cv_module__dbm=n/a \
+    py_cv_module__gdbm=n/a py_cv_module_readline=n/a py_cv_module__curses=n/a \
+    py_cv_module__curses_panel=n/a py_cv_module__blake2=n/a py_cv_module__ctypes=n/a \
+    py_cv_module__uuid=n/a \
+    ./configure --host=arm64-apple-ios${DEPLOYMENT_TARGET} \
+    --build=x86_64-pc-linux-gnu --with-build-python="$HOST_PYTHON" \
+    --without-ensurepip --disable-test-modules --disable-ipv6 --with-lto=no \
+    --enable-framework)
 (cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make -j"${JOBS:-2}")
 
 mkdir -p "$BUILD_ROOT/artifact"
