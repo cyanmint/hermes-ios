@@ -6,7 +6,7 @@ SOURCE_ROOT=${SOURCE_ROOT:-"$ROOT/build/external"}
 if [ "${SKIP_SOURCE_FETCH:-0}" = 1 ]; then
   mkdir -p "$SOURCE_ROOT/hermes-agent" "$SOURCE_ROOT/hermes-webui"
 elif [ ! -d "$SOURCE_ROOT/hermes-agent/.git" ] || [ ! -d "$SOURCE_ROOT/hermes-webui/.git" ]; then
-  "$ROOT/build/fetch-sources.sh" "$SOURCE_ROOT"
+  bash "$ROOT/build/fetch-sources.sh" "$SOURCE_ROOT"
 fi
 cp -a "$ROOT/overlay/hermes/." "$SOURCE_ROOT/hermes-agent/"
 cp -a "$ROOT/overlay/webui/." "$SOURCE_ROOT/hermes-webui/"
