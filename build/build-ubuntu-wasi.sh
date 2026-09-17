@@ -54,13 +54,11 @@ from pathlib import Path
 wheelhouse, destination = map(Path, sys.argv[1:])
 for wheel in wheelhouse.glob("*.whl"):
     with zipfile.ZipFile(wheel) as archive:
-        wheel_meta = next(
-            name for name in archive.namelist() if name.endswith(".dist-info/WHEEL")
-        )
-        tags = [line.split(":", 1)[1].strip() for line in archive.read(wheel_meta).decode().splitlines() if line.startswith("Tag:")]
-        if not any(tag.endswith("-none-any") for tag in tags):
-            continue
-        archive.extractall(destination)
+        for member in archive.infolist():
+            name = member.filename
+            if name.endswith((".so", ".pyd", ".dll")):
+                continue
+            archive.extract(member, destination)
         print(f"embedded {wheel.name}")
 PY
 
