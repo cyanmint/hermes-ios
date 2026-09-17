@@ -13,7 +13,7 @@ trap 'rm -rf "$STAGE"' EXIT
 
 [ -f "$TARGET_ROOT/libpython3.13.a" ] || { echo "missing target libpython3.13.a" >&2; exit 2; }
 [ -d "$TARGET_ROOT/Lib/encodings" ] || { echo "missing CPython standard library" >&2; exit 2; }
-[ -d "$ROOT/build/external/hermes-agent/hermes_cli" ] || "$ROOT/build/fetch-sources.sh"
+[ -f "$ROOT/build/external/hermes-agent/hermes_cli/main.py" ] || "$ROOT/build/fetch-sources.sh"
 HERMES_SOURCE=${HERMES_SOURCE:-$ROOT/build/external/hermes-agent}
 WEBUI_SOURCE=${WEBUI_SOURCE:-$ROOT/build/external/hermes-webui}
 
@@ -23,8 +23,10 @@ for package in acp_adapter agent cron gateway hermes_cli plugins providers tools
   [ -d "$HERMES_SOURCE/$package" ] && cp -a "$HERMES_SOURCE/$package" "$STAGE/hermes/"
 done
 cp -a "$HERMES_SOURCE"/*.py "$STAGE/hermes/" 2>/dev/null || true
-"$HOST_PYTHON" "$ROOT/native/patch-agent-sdk-compat.py" "$STAGE/hermes/agent/agent_init.py"
-cp "$ROOT/native/legacy_responses.py" "$STAGE/hermes/agent/legacy_responses.py"
+cp "$ROOT/overlay/hermes/hermes_cli/doctor_state.py" "$STAGE/hermes/hermes_cli/doctor_state.py"
+"$HOST_PYTHON" "$ROOT/overlay/patches/patch-ios-stability.py" "$STAGE/hermes"
+"$HOST_PYTHON" "$ROOT/overlay/patches/patch-agent-sdk-compat.py" "$STAGE/hermes/agent/agent_init.py"
+cp "$ROOT/overlay/hermes/agent/legacy_responses.py" "$STAGE/hermes/agent/legacy_responses.py"
 VENDOR_ROOT=${HERMES_VENDOR:-$(dirname "$BUILD_ROOT")/vendor}
 if [ "${HERMES_REFRESH_VENDOR:-1}" = "1" ]; then
   command -v uv >/dev/null 2>&1 || { echo "uv is required to vendor pure-Python dependencies" >&2; exit 2; }
@@ -61,9 +63,9 @@ if [ -d "$WEBUI_SOURCE/api" ]; then
     [ -f "$WEBUI_SOURCE/$module" ] && cp "$WEBUI_SOURCE/$module" "$STAGE/hermes-webui/"
   done
 fi
-"$HOST_PYTHON" "$ROOT/native/patch-webui-zip.py" "$STAGE/hermes-webui/api/config.py"
+"$HOST_PYTHON" "$ROOT/overlay/patches/patch-webui-zip.py" "$STAGE/hermes-webui/api/config.py"
 [ -d "$STAGE/hermes/plugins/browser" ] && : > "$STAGE/hermes/plugins/browser/__init__.py"
-cp "$ROOT/native/sitecustomize.py" "$STAGE/python/sitecustomize.py"
+cp "$ROOT/overlay/python/sitecustomize.py" "$STAGE/python/sitecustomize.py"
 # Native CPython modules are required to be statically linked into libpython.
 
 python3 - "$STAGE" "$ARCHIVE" <<'PY'
@@ -85,7 +87,7 @@ PY
 
 CC=${CC:-arm64-apple-ios-clang}
 "$CC" -I"$TARGET_ROOT" -I"$TARGET_ROOT/Include" -I"$TARGET_ROOT" \
-  -c "$ROOT/native/hermes_main.c" -o "$BUILD_ROOT/hermes_main.o"
+  -c "$ROOT/overlay/cpython/Programs/hermes_main.c" -o "$BUILD_ROOT/hermes_main.o"
 "$CC" -mios-version-min="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}" \
 -Wl,-headerpad_max_install_names -Wl,-x -Wl,-no_function_starts -Wl,-no_data_in_code_info -Wl,-all_load "$TARGET_ROOT/libpython3.13.a" -Wl,-force_load,"$TARGET_ROOT/Modules/_hacl/libHacl_Hash_SHA2.a" -Wl,-force_load,"$TARGET_ROOT/Modules/expat/libexpat.a" "$BUILD_ROOT/hermes_main.o" \
   -Wl,-rpath,@loader_path -framework CoreFoundation -ldl -lpthread -lm -lz -lsqlite3 \

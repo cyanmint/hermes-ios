@@ -71,6 +71,13 @@ static int configure_python_stdio(void) {
 }
 
 int main(int argc, char **argv) {
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (strcmp(argv[i], "--host") == 0) {
+            setenv("HERMES_WEBUI_HOST", argv[i + 1], 1);
+        } else if (strcmp(argv[i], "--port") == 0) {
+            setenv("HERMES_WEBUI_PORT", argv[i + 1], 1);
+        }
+    }
     if (argc == 2 && (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0)) {
         static const char version[] = "Hermes Agent v0.21.2\n";
         (void)write(STDOUT_FILENO, version, sizeof(version) - 1);
@@ -162,7 +169,17 @@ int main(int argc, char **argv) {
         return result;
     }
 
-    PyObject *module = PyImport_ImportModule("hermes_cli.main");
+    const char *entry_module = (argc > 1 && strcmp(argv[1], "webui") == 0)
+        ? "server" : "hermes_cli.main";
+    if (argc > 1 && strcmp(argv[1], "webui") == 0) {
+        /* The WebUI server owns its host/port overrides; remove the command
+         * token so its normal argv handling sees the same arguments as when
+         * launched directly. */
+        PyRun_SimpleString(
+            "import sys\n"
+            "sys.argv = [sys.argv[0]] + sys.argv[2:]\n");
+    }
+    PyObject *module = PyImport_ImportModule(entry_module);
     if (module == NULL) {
         int system_exit = handle_system_exit();
         if (system_exit >= 0) {
@@ -172,7 +189,7 @@ int main(int argc, char **argv) {
             free(python_argv);
             return system_exit;
         }
-        int result = report_python_error("import hermes_cli.main");
+        int result = report_python_error(entry_module == NULL ? "import entry module" : "import entry module");
         Py_FinalizeEx();
         PyConfig_Clear(&config);
         free(python_argv);
@@ -182,7 +199,7 @@ int main(int argc, char **argv) {
     Py_DECREF(module);
     if (entrypoint == NULL || !PyCallable_Check(entrypoint)) {
         Py_XDECREF(entrypoint);
-        int result = report_python_error("find hermes_cli.main.main");
+        int result = report_python_error("find entrypoint main");
         Py_FinalizeEx();
         PyConfig_Clear(&config);
         free(python_argv);
@@ -199,7 +216,7 @@ int main(int argc, char **argv) {
             free(python_argv);
             return system_exit;
         }
-        int result = report_python_error("run hermes_cli.main.main");
+        int result = report_python_error("run entrypoint main");
         Py_FinalizeEx();
         PyConfig_Clear(&config);
         free(python_argv);

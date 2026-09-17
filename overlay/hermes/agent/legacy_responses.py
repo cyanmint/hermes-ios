@@ -1,5 +1,9 @@
 import json
+import threading
 from types import SimpleNamespace
+
+
+_HTTP_LOCK = threading.RLock()
 
 
 class _ResponseStream:
@@ -39,7 +43,8 @@ class _ResponsesCompat:
         transport = getattr(self._client, "_client", None)
         if transport is None:
             transport = httpx.Client()
-        response = transport.post(url, headers=headers, json=payload, timeout=timeout)
+        with _HTTP_LOCK:
+            response = transport.post(url, headers=headers, json=payload, timeout=timeout)
         if response.status_code >= 400:
             body = response.text
             raise RuntimeError("HTTP %s: %s" % (response.status_code, body))

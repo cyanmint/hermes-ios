@@ -31,8 +31,14 @@ IPHONEOS_DEPLOYMENT_TARGET=13.0 bash build/build-native-ios.sh
 - `build/external/hermes-agent/`
 - `build/external/hermes-webui/`
 
-`native/hermes_main.c` 是唯一原生入口：它把用户参数转交给
-`hermes_cli.main`，并把相邻的 `hermesrt.zip` 设置为 Python import path。
+`overlay/` 是受版本控制的 iOS 覆盖层，按最终 runtime 目录组织：
+
+- `overlay/cpython/Programs/hermes_main.c`
+- `overlay/hermes/`
+- `overlay/python/`
+- `overlay/patches/`
+
+它们在打包阶段覆盖/补丁到 `hermesrt.zip` staging；`build/external/` 只保存可重建的上游临时源码。
 
 ## 验收
 
