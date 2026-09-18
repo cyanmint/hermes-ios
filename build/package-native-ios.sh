@@ -20,7 +20,10 @@ WEBUI_SOURCE=${WEBUI_SOURCE:-$ROOT/build/external/hermes-webui}
 
 mkdir -p "$STAGE/hermes" "$STAGE/hermes-webui" "$STAGE/python/site-packages"
 cp -a "$TARGET_ROOT/Lib/." "$STAGE/python/"
-cp -a "$HERMES_SOURCE/." "$STAGE/hermes/"
+for package in acp_adapter agent cron gateway hermes_cli plugins providers tools tui_gateway hermes; do
+  [ -d "$HERMES_SOURCE/$package" ] && cp -a "$HERMES_SOURCE/$package" "$STAGE/hermes/"
+done
+cp -a "$HERMES_SOURCE"/*.py "$STAGE/hermes/" 2>/dev/null || true
 cp -a "$ROOT/overlay/hermes/." "$STAGE/hermes/"
 "$HOST_PYTHON" "$ROOT/overlay/patches/patch-ios-stability.py" "$STAGE/hermes"
 "$HOST_PYTHON" "$ROOT/overlay/patches/patch-agent-sdk-compat.py" "$STAGE/hermes/agent/agent_init.py"
@@ -55,7 +58,11 @@ if [ -d "$VENDOR_ROOT" ]; then
     exit 2
   fi
 fi
-cp -a "$WEBUI_SOURCE/." "$STAGE/hermes-webui/"
+cp -a "$WEBUI_SOURCE/api" "$STAGE/hermes-webui/"
+cp -a "$WEBUI_SOURCE/static" "$STAGE/hermes-webui/" 2>/dev/null || true
+for module in bootstrap.py server.py mcp_server.py; do
+  [ -f "$WEBUI_SOURCE/$module" ] && cp "$WEBUI_SOURCE/$module" "$STAGE/hermes-webui/"
+done
 "$HOST_PYTHON" "$ROOT/overlay/patches/patch-webui-zip.py" "$STAGE/hermes-webui/api/config.py"
 [ -d "$STAGE/hermes/plugins/browser" ] && : > "$STAGE/hermes/plugins/browser/__init__.py"
 cp "$ROOT/overlay/python/sitecustomize.py" "$STAGE/python/sitecustomize.py"
