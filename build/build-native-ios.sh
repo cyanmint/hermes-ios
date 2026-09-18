@@ -140,7 +140,6 @@ with open(makefile, "a", encoding="utf-8", newline="\n") as f:
     f.write("PY_CORE_LDFLAGS += -lz -Wl,-force_load," + str(hacl) + " -Wl,-force_load," + str(expat) + "\n")
 PY
 
-(cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make -j"${JOBS:-16}" Modules/_hacl/libHacl_Hash_SHA2.a Modules/expat/libexpat.a)
 (cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" libpython3.13.a || {
   rc=$?
   [ "$rc" -eq 2 ] || exit "$rc"
