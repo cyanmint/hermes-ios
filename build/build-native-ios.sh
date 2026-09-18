@@ -69,7 +69,7 @@ if [ ! -f "$OPENSSL_INSTALL/lib/libssl.a" ] || [ ! -f "$OPENSSL_INSTALL/lib/libc
     cd "$OPENSSL_ROOT"
     make clean >/dev/null 2>&1 || true
     CC="$TOOLBIN/arm64-apple-ios-clang" \
-      CFLAGS="-I$SDK_ROOT/usr/include -isysroot=$SDK_ROOT -miphoneos-version-min=$DEPLOYMENT_TARGET" \
+      CFLAGS="-I$SDK_ROOT/usr/include -isysroot $SDK_ROOT -miphoneos-version-min=$DEPLOYMENT_TARGET" \
       ./Configure iphoneos-cross no-shared no-apps no-tests \
         --prefix="$OPENSSL_INSTALL" -static
     sed -i "s#/SDKs/#$SDK_ROOT#g" Makefile

@@ -1,73 +1,247 @@
-# Hermes 原生 iOS 交付
+# Hermes iOS Native Runtime
 
-本项目定义两个越狱 iOS（arm64）运行时交付物：
+Hermes iOS 是面向越狱 iPad/iPhone arm64 的原生 Hermes Agent 运行时。它不是 a-Shell/WASI 交付路径，也不是使用 a-Shell 自带 Python 的外部 WebUI。
 
-- `./hermes`：静态链接 CPython 与所需标准库 native modules 的原生 Mach-O 可执行文件
-- `hermesrt.zip`：完整 Python 标准库、Hermes Agent 和 WebUI 运行时
+当前主分支：`default`
 
-`./hermes` 直接启动 `hermes_cli.main`，使用 iOS 原生 socket/TLS 能力。
+## 交付物
 
-## 构建
-
-构建必须在 WSL/Linux 执行，并下载 Theos iPhoneOS SDK 和 CPython 源码：
-
-```sh
-IPHONEOS_DEPLOYMENT_TARGET=13.0 bash build/build-native-ios.sh
-```
-
-脚本输出 `./hermes` 和 `./hermesrt.zip`。SDK、CPython 和中间产物放在
-`BUILD_ROOT`（默认 `/root/hermes-build/native-ios`），不会写入 Git 工作树。
-
-## 源码和运行时
-
-上游源码不作为 submodule 提交。构建时执行：
-
-```sh
-./build/fetch-sources.sh
-```
-
-源码被固定提交下载到 `build/external/`：
-
-- `build/external/hermes-agent/`
-- `build/external/hermes-webui/`
-
-`overlay/` 是受版本控制的 iOS 覆盖层，按最终 runtime 目录组织：
-
-- `overlay/cpython/Programs/hermes_main.c`
-- `overlay/hermes/`
-- `overlay/python/`
-- `overlay/patches/`
-
-它们在打包阶段覆盖/补丁到 `hermesrt.zip` staging；`build/external/` 只保存可重建的上游临时源码。
-
-runtime ZIP 同时保留两个上游 shallow clone：
+构建会生成两个文件：
 
 ```text
-hermes/.git/
-hermes-webui/.git/
+hermes
+hermesrt.zip
+```
+
+### `hermes`
+
+静态链接 CPython 3.13、iOS 原生入口和必要的 native Python modules 的 arm64 Mach-O 可执行文件。
+
+入口直接负责：
+
+- 初始化静态 CPython
+- 设置 ZIP runtime import paths
+- 配置 stdout/stderr
+- 启动 Hermes CLI、WebUI 和 `upgrade`
+
+### `hermesrt.zip`
+
+包含：
+
+```text
+hermes/          Hermes Agent Python 源码
+hermes-webui/    Hermes WebUI Python 后端与静态资源
+overlay/         当前 iOS 覆盖层与 patch
+python/          CPython 标准库和纯 Python vendor 依赖
+```
+
+ZIP **不包含 `.git`**。升级时如果发现源码目录没有 `.git`，会在临时目录中使用纯 Python Git/archive 流程恢复 shallow source metadata；不会把 Git object database 交付到设备。
+
+## 当前目录结构
+
+```text
+build/
+├── build-native-ios.sh       iOS SDK、OpenSSL、CPython 和 native 构建
+├── package-native-ios.sh     runtime ZIP 与 Mach-O 打包
+└── fetch-sources.sh          固定上游 Agent/WebUI 源码
+
 overlay/
+├── cpython/Programs/
+│   └── hermes_main.c          原生 CPython 入口
+├── hermes/
+│   ├── agent/
+│   │   └── legacy_responses.py
+│   └── hermes_cli/
+│       ├── doctor_state.py
+│       └── upgrade.py
+├── python/
+│   └── sitecustomize.py
+└── patches/
+    ├── patch-agent-sdk-compat.py
+    ├── patch-ios-stability.py
+    └── patch-webui-zip.py
 ```
 
-真机执行 `./hermes upgrade` 时，会在临时目录中先对两个 clone 执行
-`git reset --hard HEAD`、`git clean -fd`，再执行 `git pull --ff-only`，重新应用
-`overlay/` 和 patch，并原子重写 `hermesrt.zip`。`python/` 条目会从旧 ZIP 原样复制，
-不会随 Agent/WebUI 更新而重建。
+`build/external/` 和 `/root/hermes-build/` 只用于构建期源码、SDK、缓存和中间产物，不应提交到 Git。
 
-## 验收
+## 本地构建
 
-主机侧只能检查 Mach-O 结构和 ZIP 内容：
+要求：
+
+- WSL/Linux
+- Clang/LLD
+- `make`
+- `uv`
+- Theos iPhoneOS SDK
+- 网络访问 GitHub
+
+构建使用 16 个并行任务：
 
 ```sh
-file ./hermes
-unzip -t hermesrt.zip
+JOBS=16 bash build/build-native-ios.sh
 ```
 
-设备侧直接执行：
+默认构建根目录：
+
+```text
+/root/hermes-build/native-ios
+```
+
+可以显式指定：
 
 ```sh
+BUILD_ROOT=/root/hermes-build/native-ios \
+IPHONEOS_DEPLOYMENT_TARGET=13.0 \
+JOBS=16 \
+bash build/build-native-ios.sh
+```
+
+仓库根目录没有可用的 Makefile；不要执行根目录 `make` 作为构建入口。
+
+构建脚本会固定并准备：
+
+- iPhoneOS SDK 16.5
+- CPython 3.13.9
+- OpenSSL 3.3.2
+- 静态 `_ssl`、`_hashlib`、SQLite、Expat 和标准库模块
+- 无 `.so` vendor native extensions
+
+## WebUI 启动
+
+设备上直接运行：
+
+```sh
+./hermes webui --host 127.0.0.1 --port 8787
+```
+
+默认验收地址：
+
+```text
+http://127.0.0.1:8787
+```
+
+启动输出必须包含：
+
+```text
+agent dir   : .../hermesrt.zip/hermes  [ok]
+host:port   : 127.0.0.1:8787
+Hermes Web UI listening on http://127.0.0.1:8787
+```
+
+最低真机检查：
+
+```sh
+curl -i http://127.0.0.1:8787/health
+curl -i http://127.0.0.1:8787/
+```
+
+真实对话验收还必须完成：
+
+1. `POST /api/session/new`
+2. `POST /api/chat/start`
+3. 读取 SSE stream
+4. 收到 assistant 回复和终态事件
+5. 对话期间 WebUI 进程持续存在
+6. stderr 中没有 `Fatal Python error: Aborted`
+
+## Runtime 升级
+
+设备上执行：
+
+```sh
+./hermes upgrade
+```
+
+升级流程：
+
+1. 将 `hermes/` 和 `hermes-webui/` 解压到临时目录
+2. 如果存在 `.git`，先恢复 tracked 文件，再进行纯 Python fetch/update
+3. 如果不存在 `.git`，下载上游 source archive 并创建最小 shallow metadata
+4. 应用 `overlay/` 和打包 patch
+5. 保留原 ZIP 的 `python/` 条目，不重建 Python runtime
+6. 原子替换 `hermesrt.zip`
+
+iOS 禁止依赖 subprocess，因此升级不能调用系统 `git`。升级使用打包在 `python/` 中的纯 Python Dulwich，并在大型 Git object database 不适合 iOS 时使用 GitHub source archive fallback。
+
+升级后必须重新验证：
+
+```sh
+./hermes webui --host 127.0.0.1 --port 8787
+curl -i http://127.0.0.1:8787/health
+curl -i http://127.0.0.1:8787/
+```
+
+## GitHub Actions
+
+workflow：
+
+```text
+.github/workflows/build-native-ios.yml
+```
+
+触发方式：
+
+- push 到 `default`
+- GitHub Actions 页面手动执行 `workflow_dispatch`
+
+手动执行时可以选择：
+
+```text
+create_release: true/false
+release_tag: 可选
+```
+
+成功后上传两个 artifacts：
+
+```text
+hermes-native-ios
+hermesrt-native-ios
+```
+
+如果 `create_release=true`，workflow 会创建 Release 并附加：
+
+```text
+hermes
+hermesrt.zip
+```
+
+workflow 构建门禁会检查：
+
+- Mach-O 和 ZIP 存在
+- ZIP integrity
+- 必需 runtime paths
+- 禁止 `.so`、`.dylib`、`.pyd`、`.wasm`
+- 禁止嵌入 `.git`
+
+## 真机部署
+
+通过 USB SSH 转发建立连接：
+
+```sh
+iproxy 2222 22
+```
+
+部署两个交付物：
+
+```sh
+scp -P 2222 hermes hermesrt.zip root@127.0.0.1:/var/jb/var/root/
+```
+
+然后在设备上：
+
+```sh
+chmod 755 ./hermes
 ./hermes --version
-./hermes doctor
+./hermes webui --host 127.0.0.1 --port 8787
 ```
 
-越狱 iOS 验收还必须确认 `hermesrt.zip` 可读，原生 `_socket`、`ssl`、`sqlite3`
-模组可导入，以及 WebUI 能够绑定端口。Windows 或 WSL 不能代替设备执行验证。
+设备验证不能由主机导入、`doctor` 或静态 ZIP 检查替代。必须记录真实退出码、HTTP 状态、响应内容、SSE 事件、进程状态和 stderr。
+
+## 设计边界
+
+- `core/native` 能力只负责 CPython 宿主、socket/TLS、存档和通用运行时
+- Agent 与 WebUI Python 源码属于 runtime overlay/source payload
+- Python 依赖在构建期固定，设备上不执行 `pip install` 或 `uv pip install`
+- 不把 API key、token、密码或其他凭据写入 artifact、日志或 workflow 输出
+- `python/` 在 `upgrade` 中保持不变；Agent/WebUI 更新通过 overlay 和源码更新完成
+- 纯静态检查不能代替真实越狱 iOS 验收
