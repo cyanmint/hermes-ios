@@ -45,7 +45,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential clang lld llvm pkg-config libsqlite3-dev zlib1g-dev \
-            ca-certificates curl git unzip
+            ca-certificates curl git unzip libplist-dev libssl-dev
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -57,6 +57,15 @@ jobs:
           set -euo pipefail
           JOBS=16 bash build/build-native-ios.sh
 
+      - name: Sign Hermes executable for jailbreak deployment
+        run: |
+          set -euo pipefail
+          ldid_root="$RUNNER_TEMP/ldid"
+          git clone --depth=1 https://github.com/ProcursusTeam/ldid.git "$ldid_root"
+          make -C "$ldid_root" -j16
+          "$ldid_root/ldid" -S hermes
+          "$ldid_root/ldid" -e hermes >/dev/null
+
       - name: Validate the two deliverables
         shell: bash
         run: |
@@ -64,6 +73,7 @@ jobs:
           test -x hermes
           test -s hermesrt.zip
           file hermes hermesrt.zip
+          llvm-objdump --macho --private-headers hermes | grep -A3 LC_CODE_SIGNATURE
           unzip -t hermesrt.zip
           python3 - <<'PY'
           import zipfile
