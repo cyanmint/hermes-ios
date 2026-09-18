@@ -154,6 +154,10 @@ for line in dryrun.read_text(encoding="utf-8", errors="replace").splitlines():
     except ValueError:
         continue
     objects.update(token for token in tokens[index + 1:] if token.endswith(".o"))
+makefile = dryrun.parent / "Makefile"
+for line in makefile.read_text(encoding="utf-8", errors="replace").splitlines():
+    if line.startswith("MODOBJS="):
+        objects.update(token for token in line.split()[1:] if token.endswith(".o"))
 if not objects:
     raise SystemExit("could not extract libpython object list from Makefile dry-run")
 output.write_text("\n".join(sorted(objects)) + "\n", encoding="utf-8", newline="\n")
