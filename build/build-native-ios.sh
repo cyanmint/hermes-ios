@@ -130,19 +130,13 @@ for line in lines:
             objects.append("Modules/" + source_path[:-2] + ".o")
 objects = sorted(set(objects))
 pathlib.Path(pathlib.Path(makefile).parent / "native-module-objects.txt").write_text("\n".join(objects) + "\n")
-with open(makefile, "a", encoding="utf-8", newline="\n") as f:
-    f.write("\nMODOBJS += " + " ".join(objects) + "\n")
-    f.write("MODULE_OBJS += " + " ".join(objects) + "\n")
-    f.write("LIBRARY_OBJS += $(MODULE_OBJS)\n")
-    f.write("libpython3.13.a: " + " ".join(objects) + "\n")
-    expat = pathlib.Path(makefile).parent / "Modules/expat/libexpat.a"
-    f.write("SHLIBS += -lz " + str(pathlib.Path(makefile).parent / "Modules/_hacl/libHacl_Hash_SHA2.a") + " -Wl,-force_load," + str(expat) + "\n")
-    hacl = pathlib.Path(makefile).parent / "Modules/_hacl/libHacl_Hash_SHA2.a"
-    f.write("PY_CORE_LDFLAGS += -lz -Wl,-force_load," + str(hacl) + " -Wl,-force_load," + str(expat) + "\n")
 PY
 
 (cd "$TARGET_ROOT" && \
   PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" $(cat native-module-objects.txt))
+(cd "$TARGET_ROOT" && \
+  PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" \
+    Modules/_hacl/libHacl_Hash_SHA2.a Modules/expat/libexpat.a)
 (cd "$TARGET_ROOT" && \
   llvm-ar rcs libpython3.13.a $(cat native-module-objects.txt) && \
   llvm-ranlib libpython3.13.a)
