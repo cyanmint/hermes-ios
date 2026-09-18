@@ -15,7 +15,7 @@ trap 'rm -rf "$STAGE"' EXIT
 [ -d "$TARGET_ROOT/Lib/encodings" ] || { echo "missing CPython standard library" >&2; exit 2; }
 HERMES_SOURCE=${HERMES_SOURCE:-$ROOT/build/external/hermes-agent}
 WEBUI_SOURCE=${WEBUI_SOURCE:-$ROOT/build/external/hermes-webui}
-[ -f "$HERMES_SOURCE/hermes_cli/main.py" ] || "$ROOT/build/fetch-sources.sh"
+[ -f "$HERMES_SOURCE/hermes_cli/main.py" ] || bash "$ROOT/build/fetch-sources.sh"
 [ -f "$WEBUI_SOURCE/api/config.py" ] || { echo "missing Hermes WebUI source: $WEBUI_SOURCE" >&2; exit 2; }
 
 mkdir -p "$STAGE/hermes" "$STAGE/hermes-webui" "$STAGE/python/site-packages"
