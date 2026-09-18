@@ -139,6 +139,26 @@ pathlib.Path(pathlib.Path(makefile).parent / "native-module-objects.txt").write_
 PY
 
 (cd "$TARGET_ROOT" && \
+  PATH="$TOOLBIN:/usr/bin:/bin" make -n -o Makefile libpython3.13.a > native-libpython-dryrun.txt)
+python3 - "$TARGET_ROOT/native-libpython-dryrun.txt" "$TARGET_ROOT/native-module-objects.txt" <<'PY'
+from pathlib import Path
+import shlex, sys
+dryrun, output = map(Path, sys.argv[1:])
+objects = set()
+for line in dryrun.read_text(encoding="utf-8", errors="replace").splitlines():
+    if "libpython3.13.a" not in line or " rcs " not in f" {line} ":
+        continue
+    tokens = shlex.split(line)
+    try:
+        index = tokens.index("libpython3.13.a")
+    except ValueError:
+        continue
+    objects.update(token for token in tokens[index + 1:] if token.endswith(".o"))
+if not objects:
+    raise SystemExit("could not extract libpython object list from Makefile dry-run")
+output.write_text("\n".join(sorted(objects)) + "\n", encoding="utf-8", newline="\n")
+PY
+(cd "$TARGET_ROOT" && \
   PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -o Modules/config.c -o Modules/config.h -j"${JOBS:-16}" \
     $(cat native-module-objects.txt))
 (cd "$TARGET_ROOT" && \
