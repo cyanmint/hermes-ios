@@ -149,7 +149,7 @@ PY
   llvm-ranlib libpython3.13.a)
 
 mkdir -p "$BUILD_ROOT/artifact"
-CC=arm64-apple-ios-clang PATH="$TOOLBIN:/usr/bin:/bin" \
+CC=arm64-apple-ios-clang PATH="$TOOLBIN:$PATH" \
   bash "$ROOT/build/package-native-ios.sh" \
   "$TARGET_ROOT" "$BUILD_ROOT/artifact/hermes"
 cp "$BUILD_ROOT/artifact/hermes" "$ROOT/hermes"
