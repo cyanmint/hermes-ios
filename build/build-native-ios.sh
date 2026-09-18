@@ -59,6 +59,10 @@ cat > "$TOOLBIN/arm64-apple-ios-ar" <<'EOF'
 #!/bin/sh
 exec llvm-ar "$@"
 EOF
+cat > "$TOOLBIN/arm64-apple-ios-ranlib" <<'EOF'
+#!/bin/sh
+exec llvm-ranlib "$@"
+EOF
 chmod +x "$TOOLBIN"/*
 
 if [ ! -d "$OPENSSL_ROOT/.git" ]; then
@@ -92,7 +96,7 @@ EOF
 clang --target=arm64-apple-ios${DEPLOYMENT_TARGET} -isysroot "$SDK_ROOT" \
   -c "$TARGET_ROOT/ios_compat.c" -o "$TARGET_ROOT/ios_compat.o"
 (cd "$TARGET_ROOT" && \
-  PATH="$TOOLBIN:/usr/bin:/bin" CC=arm64-apple-ios-clang \
+  PATH="$TOOLBIN:/usr/bin:/bin" CC=arm64-apple-ios-clang AR=arm64-apple-ios-ar RANLIB=arm64-apple-ios-ranlib \
     CPPFLAGS="-DOPENSSL_THREADS -I$OPENSSL_INSTALL/include" \
     LDFLAGS="-L$OPENSSL_INSTALL/lib" \
     LIBS="$TARGET_ROOT/ios_compat.o -lssl -lcrypto" \
