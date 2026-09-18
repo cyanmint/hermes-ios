@@ -129,6 +129,7 @@ for line in lines:
             source_path = token[2:] if token.startswith("$(srcdir)/") else token
             objects.append("Modules/" + source_path[:-2] + ".o")
 objects = sorted(set(objects))
+pathlib.Path(pathlib.Path(makefile).parent / "native-module-objects.txt").write_text("\n".join(objects) + "\n")
 with open(makefile, "a", encoding="utf-8", newline="\n") as f:
     f.write("\nMODOBJS += " + " ".join(objects) + "\n")
     f.write("MODULE_OBJS += " + " ".join(objects) + "\n")
@@ -140,12 +141,11 @@ with open(makefile, "a", encoding="utf-8", newline="\n") as f:
     f.write("PY_CORE_LDFLAGS += -lz -Wl,-force_load," + str(hacl) + " -Wl,-force_load," + str(expat) + "\n")
 PY
 
-(cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" libpython3.13.a || {
-  rc=$?
-  [ "$rc" -eq 2 ] || exit "$rc"
-  printf '\nSHLIBS += -lz -lsqlite3 %s/Modules/_hacl/libHacl_Hash_SHA2.a -Wl,-force_load,%s/Modules/expat/libexpat.a\nPY_CORE_LDFLAGS += -lz -lsqlite3 %s/Modules/_hacl/libHacl_Hash_SHA2.a\n' "$TARGET_ROOT" "$TARGET_ROOT" "$TARGET_ROOT" >> "$TARGET_ROOT/Makefile"
-  PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" libpython3.13.a
-})
+(cd "$TARGET_ROOT" && \
+  PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" $(cat native-module-objects.txt))
+(cd "$TARGET_ROOT" && \
+  llvm-ar rcs libpython3.13.a $(cat native-module-objects.txt) && \
+  llvm-ranlib libpython3.13.a)
 
 mkdir -p "$BUILD_ROOT/artifact"
 CC=arm64-apple-ios-clang PATH="$TOOLBIN:/usr/bin:/bin" \
