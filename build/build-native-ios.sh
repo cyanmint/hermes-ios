@@ -139,7 +139,8 @@ pathlib.Path(pathlib.Path(makefile).parent / "native-module-objects.txt").write_
 PY
 
 (cd "$TARGET_ROOT" && \
-  PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" $(cat native-module-objects.txt))
+  PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -o Modules/config.c -o Modules/config.h -j"${JOBS:-16}" \
+    $(cat native-module-objects.txt))
 (cd "$TARGET_ROOT" && \
   PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" \
     Modules/_hacl/libHacl_Hash_SHA2.a Modules/expat/libexpat.a)
