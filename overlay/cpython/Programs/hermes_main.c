@@ -102,6 +102,9 @@ int main(int argc, char **argv) {
         return 70;
     }
 
+    PyImport_AppendInittab("binascii", PyInit_binascii);
+    PyImport_AppendInittab("_struct", PyInit__struct);
+    PyImport_AppendInittab("_socket", PyInit__socket);
     PyConfig config;
     PyConfig_InitIsolatedConfig(&config);
     config.parse_argv = 0;
@@ -161,9 +164,6 @@ int main(int argc, char **argv) {
     }
     config.module_search_paths_set = 1;
 
-    PyImport_AppendInittab("binascii", PyInit_binascii);
-    PyImport_AppendInittab("_struct", PyInit__struct);
-    PyImport_AppendInittab("_socket", PyInit__socket);
     status = Py_InitializeFromConfig(&config);
     if (PyStatus_Exception(status)) {
         PyConfig_Clear(&config);
