@@ -111,6 +111,12 @@ clang --target=arm64-apple-ios${DEPLOYMENT_TARGET} -isysroot "$SDK_ROOT" \
     --build=x86_64-pc-linux-gnu --with-build-python="$HOST_PYTHON" \
     --without-ensurepip --disable-test-modules --disable-ipv6 --with-lto=no \
     --enable-framework)
+python3 - "$TARGET_ROOT/Makefile" <<'PY'
+from pathlib import Path
+path = Path(__import__("sys").argv[1])
+text = path.read_text(encoding="utf-8")
+path.write_text(text.replace("Python.framework/Python", ""), encoding="utf-8", newline="\n")
+PY
 python3 - "$TARGET_ROOT/Modules/Setup.stdlib" "$TARGET_ROOT/Modules/Setup.local" "$TARGET_ROOT/Makefile" <<'PY'
 import pathlib, sys
 source, target, makefile = sys.argv[1:]
