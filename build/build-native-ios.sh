@@ -178,7 +178,9 @@ PY
     Modules/_hacl/libHacl_Hash_SHA2.a Modules/expat/libexpat.a)
 (cd "$TARGET_ROOT" && \
   find Modules -type f -name '*.o' -print >> native-module-objects.txt && \
-  sort -u native-module-objects.txt -o native-module-objects.txt)
+  sort -u native-module-objects.txt | \
+  grep -v '^Modules/_hacl/Hacl_Hash_SHA2\.o$' > native-module-objects.filtered && \
+  mv native-module-objects.filtered native-module-objects.txt)
 (cd "$TARGET_ROOT" && \
   llvm-ar rcs libpython3.13.a $(cat native-module-objects.txt) && \
   llvm-ranlib libpython3.13.a)
