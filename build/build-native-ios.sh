@@ -172,7 +172,7 @@ output.write_text("\n".join(sorted(objects)) + "\n", encoding="utf-8", newline="
 PY
 (cd "$TARGET_ROOT" && \
   PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -o Modules/config.c -o Modules/config.h -j"${JOBS:-16}" \
-    $(cat native-module-objects.txt) Modules/binascii.o)
+    $(cat native-module-objects.txt) Modules/binascii.o Modules/_struct.o)
 (cd "$TARGET_ROOT" && \
   PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" \
     Modules/_hacl/libHacl_Hash_SHA2.a Modules/expat/libexpat.a)
