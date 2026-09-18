@@ -143,6 +143,7 @@ PY
 python3 - "$TARGET_ROOT/native-libpython-dryrun.txt" "$TARGET_ROOT/native-module-objects.txt" <<'PY'
 from pathlib import Path
 import shlex, sys
+import re
 dryrun, output = map(Path, sys.argv[1:])
 objects = set()
 for line in dryrun.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -155,9 +156,16 @@ for line in dryrun.read_text(encoding="utf-8", errors="replace").splitlines():
         continue
     objects.update(token for token in tokens[index + 1:] if token.endswith(".o"))
 makefile = dryrun.parent / "Makefile"
-for line in makefile.read_text(encoding="utf-8", errors="replace").splitlines():
-    if line.startswith("MODOBJS="):
-        objects.update(token for token in line.split()[1:] if token.endswith(".o"))
+make_lines = makefile.read_text(encoding="utf-8", errors="replace").splitlines()
+for index, line in enumerate(make_lines):
+    if not re.match(r"^\s*MODOBJS\s*=", line):
+        continue
+    value = line.split("=", 1)[1]
+    cursor = index + 1
+    while value.rstrip().endswith("\\") and cursor < len(make_lines):
+        value = value.rstrip()[:-1] + " " + make_lines[cursor]
+        cursor += 1
+    objects.update(token for token in value.split() if token.endswith(".o"))
 if not objects:
     raise SystemExit("could not extract libpython object list from Makefile dry-run")
 output.write_text("\n".join(sorted(objects)) + "\n", encoding="utf-8", newline="\n")
