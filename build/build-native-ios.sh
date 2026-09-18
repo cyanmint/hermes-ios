@@ -181,7 +181,8 @@ PY
   sort -u native-module-objects.txt | \
   grep -v '^Modules/_hacl/Hacl_Hash_SHA2\.o$' | \
   grep -v '^Modules/expat/' > native-module-objects.filtered && \
-  mv native-module-objects.filtered native-module-objects.txt)
+  printf '%s\n' Modules/binascii.o >> native-module-objects.filtered && \
+  sort -u native-module-objects.filtered > native-module-objects.txt)
 (cd "$TARGET_ROOT" && \
   llvm-ar rcs libpython3.13.a $(cat native-module-objects.txt) && \
   llvm-ranlib libpython3.13.a)
