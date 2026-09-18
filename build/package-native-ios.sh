@@ -73,6 +73,8 @@ with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_STORED) as z:
             relative = os.path.relpath(source, root).replace(os.sep, '/')
             target = relative
             target = relative
+            if '.git' in target.split('/'):
+                continue
             if target in seen:
                 raise SystemExit(f'duplicate runtime path: {target}')
             seen.add(target)

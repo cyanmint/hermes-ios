@@ -23,6 +23,8 @@ _PACKAGES = (
     "tui_gateway",
     "hermes",
 )
+_AGENT_REMOTE = "https://github.com/NousResearch/hermes-agent.git"
+_WEBUI_REMOTE = "https://github.com/nesquena/hermes-webui.git"
 
 
 def _copytree_contents(source: Path, target: Path) -> None:
@@ -35,17 +37,21 @@ def _copytree_contents(source: Path, target: Path) -> None:
             shutil.copy2(item, destination)
 
 
-def _git_pull(path: Path) -> None:
+def _git_pull(path: Path, default_remote: str) -> None:
     try:
         from dulwich import porcelain
         from dulwich.repo import Repo
     except ImportError as exc:
         raise RuntimeError("upgrade requires bundled pure-Python dulwich") from exc
+    archive_only = path / ".git" / "hermes-archive-only"
+    if not (path / ".git").is_dir() or archive_only.is_file():
+        _github_archive_fallback(path, default_remote, "main", create_git=True)
+        return
     repo = Repo(str(path))
     porcelain.reset(repo, "hard")
     remote_url = repo.get_config().get((b"remote", b"origin"), b"url")
     if not remote_url:
-        raise RuntimeError(f"git clone has no origin URL: {path.name}")
+        remote_url = default_remote.encode("utf-8")
     fetched = porcelain.fetch(repo, remote_url.decode("utf-8"))
     refs = fetched.refs
     candidates = (
@@ -75,15 +81,24 @@ def _git_pull(path: Path) -> None:
     del repo.refs[target_ref]
 
 
-def _github_archive_fallback(path: Path, remote_url: str, branch: str) -> None:
+def _github_archive_fallback(path: Path, remote_url: str, branch: str, *, create_git: bool = False) -> None:
     parsed = urlparse(remote_url.removesuffix(".git"))
     if parsed.netloc != "github.com":
         raise RuntimeError("shallow Git object is unavailable and remote is not GitHub")
     owner_repo = parsed.path.strip("/")
-    url = f"https://codeload.github.com/{owner_repo}/zip/refs/heads/{branch}"
     try:
         import httpx
-        response = httpx.get(url, timeout=90, follow_redirects=True)
+        response = httpx.get(
+            f"https://codeload.github.com/{owner_repo}/zip/refs/heads/{branch}",
+            timeout=90,
+            follow_redirects=True,
+        )
+        if response.status_code == 404 and branch == "main":
+            response = httpx.get(
+                f"https://codeload.github.com/{owner_repo}/zip/refs/heads/master",
+                timeout=90,
+                follow_redirects=True,
+            )
         response.raise_for_status()
         archive = zipfile.ZipFile(io.BytesIO(response.content))
     except Exception as exc:
@@ -95,6 +110,7 @@ def _github_archive_fallback(path: Path, remote_url: str, branch: str) -> None:
         if len(roots) != 1:
             raise RuntimeError("GitHub source archive has an unexpected root")
         git_dir = path / ".git"
+        path.mkdir(parents=True, exist_ok=True)
         for child in path.iterdir():
             if child.name == ".git":
                 continue
@@ -103,7 +119,17 @@ def _github_archive_fallback(path: Path, remote_url: str, branch: str) -> None:
             else:
                 child.unlink()
         _copytree_contents(roots[0], path)
-        if not git_dir.is_dir():
+        if create_git:
+            from dulwich.repo import Repo
+            repo = Repo.init(str(path))
+            config = repo.get_config()
+            config.set((b"remote", b"origin"), b"url", remote_url.encode("utf-8"))
+            config.set((b"remote", b"origin"), b"fetch", b"+refs/heads/*:refs/remotes/origin/*")
+            config.write_to_path()
+            git_dir = path / ".git"
+            (git_dir / "shallow").write_text("", encoding="utf-8")
+            (git_dir / "hermes-archive-only").write_text("github codeload fallback\n", encoding="utf-8")
+        elif not git_dir.is_dir():
             raise RuntimeError("source clone lost its .git directory")
 
 
@@ -158,6 +184,8 @@ def _write_archive(archive: Path, root: Path, destination: Path) -> None:
                 base = root / directory
                 for path in sorted(base.rglob("*")):
                     if path.is_file():
+                        if ".git" in path.relative_to(root).parts:
+                            continue
                         output.write(path, path.relative_to(root).as_posix())
         with zipfile.ZipFile(temporary) as check:
             if check.testzip() is not None:
@@ -177,8 +205,8 @@ def main() -> int:
         with zipfile.ZipFile(archive) as bundle:
             bundle.extractall(root)
         try:
-            _git_pull(root / "hermes")
-            _git_pull(root / "hermes-webui")
+            _git_pull(root / "hermes", _AGENT_REMOTE)
+            _git_pull(root / "hermes-webui", _WEBUI_REMOTE)
             _build_runtime(root)
             _write_archive(archive, root, archive)
         except (OSError, RuntimeError) as exc:
