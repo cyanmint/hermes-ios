@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
 
 static char **build_argv(int argc, char **argv) {
     char **result = calloc((size_t)argc + 1, sizeof(*result));
@@ -70,7 +71,17 @@ static int configure_python_stdio(void) {
     return 0;
 }
 
+PyMODINIT_FUNC PyInit_binascii(void);
+
 int main(int argc, char **argv) {
+    const char *runtime_root = getenv("HERMES_RUNTIME_ROOT");
+    char runtime_path[PATH_MAX];
+    if (runtime_root == NULL || runtime_root[0] == '\0') runtime_root = ".";
+    if (snprintf(runtime_path, sizeof(runtime_path), "%s/hermesrt.zip", runtime_root)
+            >= (int)sizeof(runtime_path)) {
+        fputs("hermes: runtime path is too long\n", stderr);
+        return 70;
+    }
     for (int i = 1; i + 1 < argc; ++i) {
         if (strcmp(argv[i], "--host") == 0) {
             setenv("HERMES_WEBUI_HOST", argv[i + 1], 1);
@@ -105,21 +116,41 @@ int main(int argc, char **argv) {
         free(python_argv);
         Py_ExitStatusException(status);
     }
-    status = PyWideStringList_Append(&config.module_search_paths,
-                                     L"./hermesrt.zip");
+    wchar_t *runtime_zip = Py_DecodeLocale(runtime_path, NULL);
+    if (runtime_zip == NULL) {
+        fputs("hermes: unable to decode runtime path\n", stderr);
+        PyConfig_Clear(&config);
+        free(python_argv);
+        return 70;
+    }
+    status = PyWideStringList_Append(&config.module_search_paths, runtime_zip);
+    PyMem_RawFree(runtime_zip);
     if (PyStatus_Exception(status)) {
         PyConfig_Clear(&config);
         free(python_argv);
         Py_ExitStatusException(status);
     }
-    const wchar_t *runtime_paths[] = {
-        L"./hermesrt.zip/python",
-        L"./hermesrt.zip/hermes",
-        L"./hermesrt.zip/hermes-webui",
-        L"./hermesrt.zip/python/site-packages",
+    const char *runtime_suffixes[] = {
+        "/python", "/hermes", "/hermes-webui", "/python/site-packages"
     };
-    for (size_t i = 0; i < sizeof(runtime_paths) / sizeof(runtime_paths[0]); ++i) {
-        status = PyWideStringList_Append(&config.module_search_paths, runtime_paths[i]);
+    for (size_t i = 0; i < sizeof(runtime_suffixes) / sizeof(runtime_suffixes[0]); ++i) {
+        char path[PATH_MAX];
+        if (snprintf(path, sizeof(path), "%s%s", runtime_path,
+                     runtime_suffixes[i]) >= (int)sizeof(path)) {
+            fputs("hermes: runtime path is too long\n", stderr);
+            PyConfig_Clear(&config);
+            free(python_argv);
+            return 70;
+        }
+        wchar_t *wide_path = Py_DecodeLocale(path, NULL);
+        if (wide_path == NULL) {
+            fputs("hermes: unable to decode runtime path\n", stderr);
+            PyConfig_Clear(&config);
+            free(python_argv);
+            return 70;
+        }
+        status = PyWideStringList_Append(&config.module_search_paths, wide_path);
+        PyMem_RawFree(wide_path);
         if (PyStatus_Exception(status)) {
             PyConfig_Clear(&config);
             free(python_argv);
@@ -128,6 +159,7 @@ int main(int argc, char **argv) {
     }
     config.module_search_paths_set = 1;
 
+    PyImport_AppendInittab("binascii", PyInit_binascii);
     status = Py_InitializeFromConfig(&config);
     if (PyStatus_Exception(status)) {
         PyConfig_Clear(&config);
