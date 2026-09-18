@@ -72,6 +72,7 @@ static int configure_python_stdio(void) {
 }
 
 PyMODINIT_FUNC PyInit_binascii(void);
+PyMODINIT_FUNC PyInit__struct(void);
 
 int main(int argc, char **argv) {
     const char *runtime_root = getenv("HERMES_RUNTIME_ROOT");
@@ -160,6 +161,7 @@ int main(int argc, char **argv) {
     config.module_search_paths_set = 1;
 
     PyImport_AppendInittab("binascii", PyInit_binascii);
+    PyImport_AppendInittab("_struct", PyInit__struct);
     status = Py_InitializeFromConfig(&config);
     if (PyStatus_Exception(status)) {
         PyConfig_Clear(&config);
