@@ -74,6 +74,7 @@ static int configure_python_stdio(void) {
 PyMODINIT_FUNC PyInit_binascii(void);
 PyMODINIT_FUNC PyInit__struct(void);
 PyMODINIT_FUNC PyInit__socket(void);
+PyMODINIT_FUNC PyInit_select(void);
 
 int main(int argc, char **argv) {
     const char *runtime_root = getenv("HERMES_RUNTIME_ROOT");
@@ -105,6 +106,7 @@ int main(int argc, char **argv) {
     PyImport_AppendInittab("binascii", PyInit_binascii);
     PyImport_AppendInittab("_struct", PyInit__struct);
     PyImport_AppendInittab("_socket", PyInit__socket);
+    PyImport_AppendInittab("select", PyInit_select);
     PyConfig config;
     PyConfig_InitIsolatedConfig(&config);
     config.parse_argv = 0;

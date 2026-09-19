@@ -172,7 +172,7 @@ output.write_text("\n".join(sorted(objects)) + "\n", encoding="utf-8", newline="
 PY
 (cd "$TARGET_ROOT" && \
   PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -o Modules/config.c -o Modules/config.h -j"${JOBS:-16}" \
-    $(cat native-module-objects.txt) Modules/binascii.o Modules/_struct.o Modules/socketmodule.o Modules/mathmodule.o Modules/cmathmodule.o)
+    $(cat native-module-objects.txt) Modules/binascii.o Modules/_struct.o Modules/socketmodule.o Modules/selectmodule.o Modules/mathmodule.o Modules/cmathmodule.o)
 (cd "$TARGET_ROOT" && \
   PATH="$TOOLBIN:/usr/bin:/bin" make -o Makefile -j"${JOBS:-16}" \
     Modules/_hacl/libHacl_Hash_SHA2.a Modules/expat/libexpat.a)
@@ -182,6 +182,7 @@ PY
   grep -v '^Modules/_hacl/Hacl_Hash_SHA2\.o$' | \
   grep -v '^Modules/expat/' > native-module-objects.filtered && \
   printf '%s\n' Modules/binascii.o >> native-module-objects.filtered && \
+  printf '%s\n' Modules/selectmodule.o >> native-module-objects.filtered && \
   sort -u native-module-objects.filtered > native-module-objects.txt)
 (cd "$TARGET_ROOT" && \
   llvm-ar rcs libpython3.13.a $(cat native-module-objects.txt) && \
