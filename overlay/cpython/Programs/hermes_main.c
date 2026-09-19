@@ -77,6 +77,7 @@ PyMODINIT_FUNC PyInit__socket(void);
 PyMODINIT_FUNC PyInit_select(void);
 PyMODINIT_FUNC PyInit_math(void);
 PyMODINIT_FUNC PyInit_cmath(void);
+PyMODINIT_FUNC PyInit__contextvars(void);
 
 int main(int argc, char **argv) {
     const char *runtime_root = getenv("HERMES_RUNTIME_ROOT");
@@ -111,6 +112,7 @@ int main(int argc, char **argv) {
     PyImport_AppendInittab("select", PyInit_select);
     PyImport_AppendInittab("math", PyInit_math);
     PyImport_AppendInittab("cmath", PyInit_cmath);
+    PyImport_AppendInittab("_contextvars", PyInit__contextvars);
     PyConfig config;
     PyConfig_InitIsolatedConfig(&config);
     config.parse_argv = 0;
