@@ -1,6 +1,9 @@
 # Build outputs and downloaded dependencies
 build/external/
 
+# Nested Blink repository is maintained and pushed independently
+/blink/
+
 # Locally generated jailbreak iOS delivery artifacts
 /hermes
 /hermesrt.zip
