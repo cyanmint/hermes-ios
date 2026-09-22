@@ -3,6 +3,7 @@ build/external/
 
 # Nested Blink repository is maintained and pushed independently
 /blink/
+/hermesLink/
 
 # Locally generated jailbreak iOS delivery artifacts
 /hermes
