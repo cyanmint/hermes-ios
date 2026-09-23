@@ -41,8 +41,11 @@ ZIP **不包含 `.git`**。升级时如果发现源码目录没有 `.git`，会�
 
 ```text
 build/
-├── build-native-ios.sh       iOS SDK、OpenSSL、CPython 和 native 构建
-├── package-native-ios.sh     runtime ZIP 与 Mach-O 打包
+├── build-hermesrt.sh         只构建 Python/Hermes runtime ZIP
+├── build-native-hermes.sh    只构建 native Hermes Mach-O
+├── build-native-ios.sh       兼容入口，依次调用以上两个脚本
+├── package-hermesrt.sh       runtime ZIP 打包
+├── package-native-hermes.sh  native Hermes 链接
 └── fetch-sources.sh          固定上游 Agent/WebUI 源码
 
 overlay/
@@ -78,7 +81,8 @@ overlay/
 构建使用 16 个并行任务：
 
 ```sh
-JOBS=16 bash build/build-native-ios.sh
+JOBS=16 bash build/build-hermesrt.sh
+JOBS=16 bash build/build-native-hermes.sh
 ```
 
 默认构建根目录：
@@ -91,9 +95,10 @@ JOBS=16 bash build/build-native-ios.sh
 
 ```sh
 BUILD_ROOT=/root/hermes-build/native-ios \
+JOBS=16 bash build/build-hermesrt.sh
+BUILD_ROOT=/root/hermes-build/native-ios \
 IPHONEOS_DEPLOYMENT_TARGET=13.0 \
-JOBS=16 \
-bash build/build-native-ios.sh
+JOBS=16 bash build/build-native-hermes.sh
 ```
 
 仓库根目录没有可用的 Makefile；不要执行根目录 `make` 作为构建入口。
