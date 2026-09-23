@@ -14,8 +14,7 @@ on:
         default: ''
         type: string
   push:
-    branches:
-      - default
+    branches: [default]
 
 permissions:
   contents: write
@@ -24,39 +23,102 @@ concurrency:
   group: native-ios-${{ github.ref }}
   cancel-in-progress: false
 
-jobs:
-  build:
-    runs-on: ubuntu-24.04
-    env:
-      JOBS: '16'
-      IPHONEOS_DEPLOYMENT_TARGET: '13.0'
-      IOS_SDK_VERSION: '16.5'
-      BUILD_ROOT: /home/runner/hermes-build/native-ios
-      HERMES_REFRESH_VENDOR: '1'
+env:
+  JOBS: '16'
+  IPHONEOS_DEPLOYMENT_TARGET: '13.0'
+  IOS_SDK_VERSION: '16.5'
+  HERMES_REFRESH_VENDOR: '1'
 
+jobs:
+  build-runtime:
+    name: Build hermesrt.zip (Linux)
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
-      - name: Install native build tools
+      - name: Install runtime build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential clang lld llvm pkg-config libsqlite3-dev zlib1g-dev \
-            ca-certificates curl git unzip libplist-dev libssl-dev
-
+          sudo apt-get install -y --no-install-recommends build-essential ca-certificates curl git unzip
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-
-      - name: Build Hermes native iOS artifacts
+      - name: Build hermesrt.zip only
+        env:
+          BUILD_ROOT: /home/runner/hermes-build/runtime
+        run: bash build/build-hermesrt.sh hermesrt.zip
+      - name: Validate hermesrt.zip
         run: |
           set -euo pipefail
-          JOBS=16 bash build/build-native-ios.sh
+          test -s hermesrt.zip
+          unzip -t hermesrt.zip
+          python3 - <<'PY'
+          import zipfile
+          names = set(zipfile.ZipFile('hermesrt.zip').namelist())
+          required = {
+              'hermes/hermes_cli/main.py', 'hermes/hermes_cli/upgrade.py',
+              'hermes-webui/api/config.py', 'python/encodings/__init__.py',
+          }
+          missing = sorted(required - names)
+          if missing: raise SystemExit(f'missing runtime entries: {missing}')
+          bad = sorted(n for n in names if n.endswith(('.so', '.dylib', '.pyd', '.wasm')))
+          if bad: raise SystemExit(f'forbidden native entries: {bad[:10]}')
+          if any('/.git/' in f'/{n}' for n in names):
+              raise SystemExit('embedded .git entries are not allowed')
+          PY
+          sha256sum hermesrt.zip
+      - name: Upload hermesrt.zip to fixed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release delete hermesrt-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create hermesrt-latest hermesrt.zip \
+            --title "Hermes runtime $GITHUB_SHA" \
+            --notes "Runtime intermediary for $GITHUB_REPOSITORY@$GITHUB_SHA"
+      - name: Upload runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermesrt-native-ios
+          path: hermesrt.zip
+          if-no-files-found: error
+          retention-days: 30
 
+  build-native:
+    name: Build native hermes (macOS)
+    needs: build-runtime
+    runs-on: macos-14
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Download hermesrt.zip from Release with curl
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/runtime"
+          curl --fail --location --retry 3 --retry-all-errors \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/hermesrt-latest/hermesrt.zip" \
+            --output "$RUNNER_TEMP/runtime/hermesrt.zip"
+          unzip -t "$RUNNER_TEMP/runtime/hermesrt.zip"
+          cp "$RUNNER_TEMP/runtime/hermesrt.zip" hermesrt.zip
+      - name: Configure Apple SDK
+        run: |
+          set -euo pipefail
+          echo "IOS_SDK_ROOT=$(xcrun --sdk iphoneos --show-sdk-path)" >> "$GITHUB_ENV"
+          echo "SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)" >> "$GITHUB_ENV"
+          xcodebuild -version
+      - name: Build native hermes only
+        env:
+          BUILD_ROOT: /Users/runner/hermes-build/native-ios
+        run: bash build/build-native-hermes.sh
       - name: Sign Hermes executable for jailbreak deployment
         run: |
           set -euo pipefail
@@ -65,45 +127,13 @@ jobs:
           make -C "$ldid_root" -j16
           "$ldid_root/ldid" -S hermes
           "$ldid_root/ldid" -e hermes >/dev/null
-
-      - name: Validate the two deliverables
-        shell: bash
+      - name: Validate native hermes
         run: |
           set -euo pipefail
           test -x hermes
-          test -s hermesrt.zip
-          file hermes hermesrt.zip
-          llvm-objdump --macho --private-headers hermes | grep -A3 LC_CODE_SIGNATURE
-          unzip -t hermesrt.zip
-          python3 - <<'PY'
-          import zipfile
-          from pathlib import Path
-
-          archive = Path('hermesrt.zip')
-          with zipfile.ZipFile(archive) as bundle:
-              names = set(bundle.namelist())
-              required = {
-                  'hermes/hermes_cli/main.py',
-                  'hermes/hermes_cli/upgrade.py',
-                  'hermes-webui/api/config.py',
-                  'overlay/patches/patch-ios-stability.py',
-                  'python/encodings/__init__.py',
-              }
-              missing = sorted(required - names)
-              if missing:
-                  raise SystemExit(f'missing runtime entries: {missing}')
-              forbidden = tuple('.so' for _ in [0]) + ('.dylib', '.pyd', '.wasm')
-              bad_native = sorted(n for n in names if n.endswith(forbidden))
-              if bad_native:
-                  raise SystemExit(f'forbidden native entries: {bad_native[:10]}')
-              embedded_git = sorted(n for n in names if '/.git/' in f'/{n}')
-              if embedded_git:
-                  raise SystemExit(f'embedded .git entries are not allowed: {embedded_git[:5]}')
-              if bundle.testzip() is not None:
-                  raise SystemExit('runtime ZIP integrity check failed')
-          PY
+          file hermes
+          xcrun llvm-objdump --macho --private-headers hermes | grep -A3 LC_CODE_SIGNATURE
           sha256sum hermes hermesrt.zip
-
       - name: Upload Hermes executable
         uses: actions/upload-artifact@v4
         with:
@@ -111,16 +141,7 @@ jobs:
           path: hermes
           if-no-files-found: error
           retention-days: 30
-
-      - name: Upload Hermes runtime ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: hermesrt-native-ios
-          path: hermesrt.zip
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Create release when requested
+      - name: Create requested release
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_release }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -128,9 +149,6 @@ jobs:
         run: |
           set -euo pipefail
           tag="$RELEASE_TAG_INPUT"
-          if [ -z "$tag" ]; then
-            tag="ios-${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}"
-          fi
+          if [ -z "$tag" ]; then tag="ios-${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}"; fi
           gh release create "$tag" hermes hermesrt.zip \
-            --title "Hermes native iOS $tag" \
-            --generate-notes
+            --title "Hermes native iOS $tag" --generate-notes

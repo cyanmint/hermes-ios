@@ -16,7 +16,7 @@ OPENSSL_INSTALL=${OPENSSL_INSTALL:-$BUILD_ROOT/openssl-install}
 TARGET_ROOT=${TARGET_ROOT:-$BUILD_ROOT/target}
 TOOLBIN=$BUILD_ROOT/bin
 
-case "$(uname -s)" in Linux) ;; *) echo 'native iOS build must run in WSL/Linux' >&2; exit 2;; esac
+case "$(uname -s)" in Linux|Darwin) ;; *) echo 'native iOS build must run on Linux or macOS' >&2; exit 2;; esac
 mkdir -p "$BUILD_ROOT" "$TOOLBIN"
 
 if [ ! -d "$SDK_ROOT" ]; then
