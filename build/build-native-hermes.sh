@@ -76,16 +76,19 @@ chmod +x "$TOOLBIN"/*
 if [ ! -d "$OPENSSL_ROOT/.git" ]; then
   git clone --depth=1 --branch "$OPENSSL_REF" https://github.com/openssl/openssl.git "$OPENSSL_ROOT"
 fi
-if [ ! -f "$OPENSSL_INSTALL/lib/libssl.a" ] || [ ! -f "$OPENSSL_INSTALL/lib/libcrypto.a" ]; then
+if [ ! -f "$OPENSSL_INSTALL/lib/libssl.a" ] || [ ! -f "$OPENSSL_INSTALL/lib/libcrypto.a" ] || \
+   ! grep -Eq '^[[:space:]]*#[[:space:]]*define[[:space:]]+OPENSSL_THREADS([[:space:]]|$)' "$OPENSSL_INSTALL/include/openssl/configuration.h"; then
   (
     cd "$OPENSSL_ROOT"
     make clean >/dev/null 2>&1 || true
+    # OpenSSL's -static option also disables pthread support; no-shared emits static archives.
     CC="$TOOLBIN/arm64-apple-ios-clang" \
       AR="$TOOLBIN/arm64-apple-ios-ar" \
       RANLIB="$TOOLBIN/arm64-apple-ios-ranlib" \
       CFLAGS="-I$SDK_ROOT/usr/include -isysroot $SDK_ROOT -miphoneos-version-min=$DEPLOYMENT_TARGET" \
-      ./Configure iphoneos-cross no-shared no-apps no-tests \
-        --prefix="$OPENSSL_INSTALL" -static
+      ./Configure iphoneos-cross threads no-shared no-apps no-tests \
+        --prefix="$OPENSSL_INSTALL"
+    perl configdata.pm --dump | python3 -c 'import pathlib, re, sys; dump=sys.stdin.read(); parts=dump.split("Enabled features:",1); enabled=parts[1].split("Disabled features:",1)[0] if len(parts)>1 else ""; header=pathlib.Path("include/openssl/configuration.h").read_text(); ok=any(line.strip()=="threads" for line in enabled.splitlines()) and re.search(r"^\s*#\s*define\s+OPENSSL_THREADS\b", header, re.M); print("OpenSSL pthread support:", "enabled" if ok else "missing"); sys.exit(0 if ok else 1)'
     sed -i "s#/SDKs/#$SDK_ROOT#g" Makefile
     make -j16 build_libs
     make install_sw
