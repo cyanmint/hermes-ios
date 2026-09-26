@@ -31,12 +31,11 @@ def _open_fd_numbers() -> set[int]:
         if fd <= 2:
             continue
         try:
-            os.fstat(fd)
+            if os.get_inheritable(fd):
+                opened.add(fd)
         except OSError as error:
-            if error.errno == errno.EBADF:
-                continue
-            raise
-        opened.add(fd)
+            if error.errno != errno.EBADF:
+                raise
     return opened
 
 
