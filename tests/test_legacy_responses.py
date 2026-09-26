@@ -70,15 +70,25 @@ class LegacyResponsesStreamingTests(unittest.TestCase):
         client.api_key = "test-only-not-a-secret"
         client._client = transport
         legacy_responses.install(client)
+        tool_schema = {
+            "type": "function", "name": "terminal", "description": "Run a shell command.",
+            "parameters": {
+                "type": "object", "properties": {"command": {"type": "string"}},
+                "required": ["command"],
+            },
+        }
         try:
             events = list(client.responses.create(
-                model="test-model", input=[], tools=[], stream=True
+                model="test-model", stream=True,
+                extra_body={"input": [], "tools": [tool_schema], "tool_choice": "auto"},
             ))
         finally:
             transport.close()
 
         self.assertEqual(captured["url"], "https://api.example.test/v1/responses")
         self.assertTrue(captured["payload"]["stream"])
+        self.assertEqual(captured["payload"]["tools"], [tool_schema])
+        self.assertEqual(captured["payload"]["tool_choice"], "auto")
         self.assertIn("text/event-stream", captured["headers"].get("accept", ""))
         self.assertEqual(events, frames)
         assembled = _assemble_codex_response(events)

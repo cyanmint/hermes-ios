@@ -1,7 +1,9 @@
 import json
+import logging
 import threading
 
 
+_LOGGER = logging.getLogger(__name__)
 _HTTP_LOCK = threading.RLock()
 
 
@@ -16,6 +18,27 @@ class _ResponseStream:
         close = getattr(self._events, "close", None)
         if callable(close):
             close()
+
+
+def _log_sse_event_summary(event):
+    item = event.get("item") if isinstance(event.get("item"), dict) else {}
+    response = event.get("response") if isinstance(event.get("response"), dict) else {}
+    output = response.get("output")
+    output_items = output if isinstance(output, list) else []
+    argument = item.get("arguments")
+    delta = event.get("delta")
+    _LOGGER.debug(
+        "iOS Responses SSE event type=%s item_type=%s item_id=%s delta_chars=%s arguments_chars=%s "
+        "terminal_output_type=%s terminal_output_items=%s terminal_item_types=%s terminal_argument_chars=%s",
+        event.get("type"), item.get("type"), bool(event.get("item_id")),
+        len(delta) if isinstance(delta, str) else None,
+        len(argument) if isinstance(argument, str) else None,
+        type(output).__name__ if output is not None else "None",
+        len(output_items),
+        [entry.get("type") for entry in output_items if isinstance(entry, dict)],
+        [len(entry["arguments"]) for entry in output_items
+         if isinstance(entry, dict) and isinstance(entry.get("arguments"), str)],
+    )
 
 
 def _iter_sse_events(response):
@@ -37,6 +60,7 @@ def _iter_sse_events(response):
             raise ValueError("Responses SSE data must be a JSON object")
         if named_event and not event.get("type"):
             event["type"] = named_event
+        _log_sse_event_summary(event)
         return event
 
     for line in response.iter_lines():
@@ -95,6 +119,19 @@ class _ResponsesCompat:
         if stream:
             payload["stream"] = True
             headers["Accept"] = "text/event-stream"
+            tools = payload.get("tools")
+            tool_summary = [
+                {
+                    "name": tool.get("name"),
+                    "properties": sorted((tool.get("parameters") or {}).get("properties", {})),
+                    "required": sorted((tool.get("parameters") or {}).get("required", [])),
+                }
+                for tool in tools if isinstance(tool, dict)
+            ] if isinstance(tools, list) else []
+            _LOGGER.debug(
+                "iOS Responses SSE request stream=%s tool_choice=%s tools=%s",
+                payload.get("stream"), payload.get("tool_choice"), tool_summary,
+            )
 
             def events():
                 try:
