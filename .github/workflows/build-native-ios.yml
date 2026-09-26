@@ -72,8 +72,25 @@ jobs:
           BUILD_ROOT: ${{ runner.temp }}/hermes-build/native-ios
         run: |
           set -euo pipefail
-          bash build/build-hermesrt.sh hermesrt.zip
           bash build/build-native-hermes.sh
+          bash build/build-hermesrt.sh hermesrt.zip
+
+      - name: Sign native Hermes for jailbreak execution
+        run: |
+          set -euo pipefail
+          ldid="$RUNNER_TEMP/ldid"
+          curl --fail --location --retry 3 --retry-all-errors \
+            https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64 \
+            --output "$ldid"
+          printf '%s  %s\n' \
+            '4b8862b2fefa2cd7fa8f88cb0310779619aeaa8c72d6aff22f019b470f2fa99a' "$ldid" \
+            | sha256sum --check --strict
+          chmod 755 "$ldid"
+          "$ldid" -S hermes
+          signature=$("$ldid" -h hermes)
+          printf '%s\n' "$signature"
+          grep -q '^CodeDirectory ' <<<"$signature"
+          grep -q 'Hash type=sha256' <<<"$signature"
 
       - name: Validate native Hermes and runtime
         env:
@@ -94,10 +111,14 @@ jobs:
                   'hermes-webui/api/config.py',
                   'python/encodings/__init__.py',
                   'python/site-packages/openai/lib/__init__.py',
+                  'python/_sysconfigdata__ios_arm64-iphoneos.py',
               }
               missing = sorted(required - names)
               if missing:
                   raise SystemExit(f'missing runtime entries: {missing}')
+              config = archive.read('python/_sysconfigdata__ios_arm64-iphoneos.py').decode()
+              if 'build_time_vars' not in config:
+                  raise SystemExit('iOS sysconfig data does not define build_time_vars')
               bad = sorted(n for n in names if n.endswith(('.so', '.dylib', '.pyd', '.wasm')))
               if bad:
                   raise SystemExit(f'forbidden native entries: {bad[:10]}')
@@ -106,6 +127,8 @@ jobs:
               if any(n.startswith('python/config-') or n.startswith('python/site-packages/bin/') or n.startswith('python/_sysconfigdata__linux_') for n in names):
                   raise SystemExit('host CPython build artifacts found in hermesrt.zip')
           PY
+          signature="$($RUNNER_TEMP/ldid -h hermes)"
+          grep -q '^CodeDirectory ' <<<"$signature"
           runtime_zip="$PWD/hermesrt.zip"
           export HOME="$RUNNER_TEMP/hermes-runtime-home"
           export HERMES_HOME="$HOME/.hermes"
@@ -115,6 +138,7 @@ jobs:
           runtime_python="$BUILD_ROOT/host-python/bin/python3.13"
           test -x "$runtime_python"
           "$runtime_python" -S -c 'import openai, pydantic, hermes_cli.main, hermes_cli.doctor_state; print("zip import smoke OK", openai.__version__, pydantic.__version__)'
+          "$runtime_python" -S -c 'import importlib; cfg = importlib.import_module("_sysconfigdata__ios_arm64-iphoneos").build_time_vars; assert cfg.get("IPHONEOS_DEPLOYMENT_TARGET") == "13.0", cfg.get("IPHONEOS_DEPLOYMENT_TARGET"); assert "arm64-apple-ios" in cfg.get("CC", ""), cfg.get("CC"); print("iOS sysconfig import OK", cfg["IPHONEOS_DEPLOYMENT_TARGET"], cfg["CC"])'
           "$runtime_python" -S -m hermes_cli.main --help >/dev/null
           sha256sum hermes hermesrt.zip
 

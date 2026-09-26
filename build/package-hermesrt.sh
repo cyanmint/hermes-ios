@@ -20,6 +20,11 @@ WEBUI_SOURCE=${WEBUI_SOURCE:-$ROOT/build/external/hermes-webui}
 
 mkdir -p "$STAGE/hermes" "$STAGE/hermes-webui" "$STAGE/python/site-packages"
 cp -a "$PYTHON_LIB_ROOT/." "$STAGE/python/"
+TARGET_ROOT=${TARGET_ROOT:-$BUILD_ROOT/target-cpython}
+[ -d "$TARGET_ROOT" ] || { echo "missing target CPython build directory: $TARGET_ROOT" >&2; exit 2; }
+SYS_CONFIG_DATA=$(find "$TARGET_ROOT" -type f -name '_sysconfigdata__ios_arm64-iphoneos.py' -print -quit)
+[ -s "$SYS_CONFIG_DATA" ] || { echo "missing generated iOS sysconfig data" >&2; exit 2; }
+cp "$SYS_CONFIG_DATA" "$STAGE/python/_sysconfigdata__ios_arm64-iphoneos.py"
 for package in acp_adapter agent cron gateway hermes_cli plugins providers tools tui_gateway hermes; do
   [ -d "$HERMES_SOURCE/$package" ] && cp -a "$HERMES_SOURCE/$package" "$STAGE/hermes/"
 done

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Compatibility entrypoint: the deliverables are now built independently.
+# Compatibility entrypoint: build target configuration before packaging the runtime.
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-bash "$ROOT/build/build-hermesrt.sh"
 bash "$ROOT/build/build-native-hermes.sh"
+bash "$ROOT/build/build-hermesrt.sh"
 exit 0
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

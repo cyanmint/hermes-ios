@@ -78,11 +78,11 @@ overlay/
 - Theos iPhoneOS SDK
 - 网络访问 GitHub
 
-构建使用 16 个并行任务：
+构建使用 16 个并行任务。先构建目标 CPython 及其 iOS sysconfig 数据，再打包 runtime：
 
 ```sh
-JOBS=16 bash build/build-hermesrt.sh
 JOBS=16 bash build/build-native-hermes.sh
+JOBS=16 bash build/build-hermesrt.sh
 ```
 
 默认构建根目录：
@@ -95,10 +95,10 @@ JOBS=16 bash build/build-native-hermes.sh
 
 ```sh
 BUILD_ROOT=/root/hermes-build/native-ios \
-JOBS=16 bash build/build-hermesrt.sh
-BUILD_ROOT=/root/hermes-build/native-ios \
 IPHONEOS_DEPLOYMENT_TARGET=13.0 \
 JOBS=16 bash build/build-native-hermes.sh
+BUILD_ROOT=/root/hermes-build/native-ios \
+JOBS=16 bash build/build-hermesrt.sh
 ```
 
 仓库根目录没有可用的 Makefile；不要执行根目录 `make` 作为构建入口。
@@ -212,13 +212,15 @@ hermesrt.zip
 
 workflow 构建门禁会检查：
 
-- Mach-O 和 ZIP 存在
+- Mach-O 和 ZIP 存在，Mach-O 已完成 ad-hoc 代码签名
 - ZIP integrity
-- 必需 runtime paths
+- 必需 runtime paths，包括目标 iOS sysconfig 数据
 - 禁止 `.so`、`.dylib`、`.pyd`、`.wasm`
 - 禁止嵌入 `.git`
 
 ## 真机部署
+
+GitHub Actions artifact 已完成 ad-hoc 签名。若使用本地构建的未签名可执行文件，先在设备上执行 `ldid -S ./hermes`；否则 iOS 会直接终止它。
 
 通过 USB SSH 转发建立连接：
 

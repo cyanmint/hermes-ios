@@ -143,6 +143,19 @@ objects = sorted(set(objects))
 pathlib.Path(pathlib.Path(makefile).parent / "native-module-objects.txt").write_text("\n".join(objects) + "\n")
 PY
 
+(cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make pybuilddir.txt)
+SYS_CONFIG_DATA=$(find "$TARGET_ROOT" -type f -name '_sysconfigdata__ios_arm64-iphoneos.py' -print -quit)
+[ -s "$SYS_CONFIG_DATA" ] || { echo "missing generated iOS sysconfig data" >&2; exit 4; }
+"$HOST_PYTHON" - "$SYS_CONFIG_DATA" <<'PY'
+import ast, pathlib, sys
+tree = ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+if not any(isinstance(node, ast.Assign) and any(
+    isinstance(target, ast.Name) and target.id == "build_time_vars"
+    for target in node.targets
+) for node in tree.body):
+    raise SystemExit("generated iOS sysconfig data has no build_time_vars")
+PY
+
 # Regenerate the module registry and Makefile from the static Setup.local list.
 (cd "$TARGET_ROOT" && PATH="$TOOLBIN:/usr/bin:/bin" make Modules/config.c)
 python3 - "$TARGET_ROOT/Makefile" <<'PY'
