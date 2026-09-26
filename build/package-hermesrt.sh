@@ -53,6 +53,8 @@ for module in bootstrap.py server.py mcp_server.py; do [ -f "$WEBUI_SOURCE/$modu
 [ -d "$STAGE/hermes/plugins/browser" ] && : > "$STAGE/hermes/plugins/browser/__init__.py"
 cp "$ROOT/overlay/python/sitecustomize.py" "$STAGE/python/sitecustomize.py"
 cp -a "$ROOT/overlay" "$STAGE/overlay"
+# Host CPython's lib-dynload varies by Linux distro and is not usable on iOS.
+find "$STAGE" \( -type f -o -type l \) -name '*.so' -delete
 
 python3 - "$STAGE" "$ARCHIVE" <<'PY'
 import os, sys, zipfile
