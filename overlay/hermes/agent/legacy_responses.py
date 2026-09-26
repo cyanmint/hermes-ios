@@ -1,6 +1,7 @@
 import json
 import logging
 import threading
+from types import SimpleNamespace
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,6 +42,15 @@ def _log_sse_event_summary(event):
     )
 
 
+def _to_sdk_shape(value):
+    """Match the SDK's attribute-based item objects while leaving the SSE event envelope as a dict."""
+    if isinstance(value, dict):
+        return SimpleNamespace(**{key: _to_sdk_shape(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return [_to_sdk_shape(item) for item in value]
+    return value
+
+
 def _iter_sse_events(response):
     event_name = None
     data_lines = []
@@ -61,6 +71,8 @@ def _iter_sse_events(response):
         if named_event and not event.get("type"):
             event["type"] = named_event
         _log_sse_event_summary(event)
+        if isinstance(event.get("item"), dict):
+            event["item"] = _to_sdk_shape(event["item"])
         return event
 
     for line in response.iter_lines():

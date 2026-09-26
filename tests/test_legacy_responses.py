@@ -137,7 +137,7 @@ class LegacyResponsesStreamingTests(unittest.TestCase):
         finally:
             transport.close()
 
-        self.assertEqual(events, frames)
+        self.assertEqual([event["type"] for event in events], [frame["type"] for frame in frames])
         call_deltas = [event for event in events if event["type"] == "response.function_call_arguments.delta"]
         self.assertEqual(call_deltas[0]["delta"], '{"command":"printf HERMES_IOS_TOOL_OK"}')
         assembled = _assemble_codex_response(events)
@@ -147,6 +147,15 @@ class LegacyResponsesStreamingTests(unittest.TestCase):
             self.assertEqual(_field(tool_calls[0], "name"), "terminal")
             self.assertEqual(_field(tool_calls[0], "call_id"), "call_1")
             self.assertEqual(_field(tool_calls[0], "arguments"), '{"command":"printf HERMES_IOS_TOOL_OK"}')
+            from agent.codex_responses_adapter import _normalize_codex_response
+            assistant_message, finish_reason = _normalize_codex_response(assembled, issuer_kind="github_responses")
+            self.assertEqual(finish_reason, "tool_calls")
+            self.assertEqual(len(assistant_message.tool_calls), 1)
+            self.assertEqual(assistant_message.tool_calls[0].function.name, "terminal")
+            self.assertEqual(
+                assistant_message.tool_calls[0].function.arguments,
+                '{"command":"printf HERMES_IOS_TOOL_OK"}',
+            )
 
 
 if __name__ == "__main__":
