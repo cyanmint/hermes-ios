@@ -215,6 +215,7 @@ workflow 构建门禁会检查：
 - Mach-O 和 ZIP 存在，Mach-O 已完成 ad-hoc 代码签名
 - ZIP integrity
 - 必需 runtime paths，包括目标 iOS sysconfig 数据
+- Codex Responses SSE 兼容层保留文本与工具调用事件
 - 禁止 `.so`、`.dylib`、`.pyd`、`.wasm`
 - 禁止嵌入 `.git`
 

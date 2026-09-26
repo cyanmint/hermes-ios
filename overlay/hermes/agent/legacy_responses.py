@@ -1,6 +1,5 @@
 import json
 import threading
-from types import SimpleNamespace
 
 
 _HTTP_LOCK = threading.RLock()
@@ -14,7 +13,52 @@ class _ResponseStream:
         yield from self._events
 
     def close(self):
-        return None
+        close = getattr(self._events, "close", None)
+        if callable(close):
+            close()
+
+
+def _iter_sse_events(response):
+    event_name = None
+    data_lines = []
+
+    def take_event():
+        nonlocal event_name, data_lines
+        if not data_lines:
+            event_name = None
+            return None
+        raw_data = "\n".join(data_lines)
+        named_event = event_name
+        event_name, data_lines = None, []
+        if raw_data == "[DONE]":
+            return None
+        event = json.loads(raw_data)
+        if not isinstance(event, dict):
+            raise ValueError("Responses SSE data must be a JSON object")
+        if named_event and not event.get("type"):
+            event["type"] = named_event
+        return event
+
+    for line in response.iter_lines():
+        if not line:
+            event = take_event()
+            if event is not None:
+                yield event
+        elif line.startswith(":"):
+            continue
+        else:
+            field, separator, value = line.partition(":")
+            if not separator:
+                continue
+            if value.startswith(" "):
+                value = value[1:]
+            if field == "event":
+                event_name = value
+            elif field == "data":
+                data_lines.append(value)
+    event = take_event()
+    if event is not None:
+        yield event
 
 
 class _ResponsesCompat:
@@ -29,8 +73,8 @@ class _ResponsesCompat:
             for key, value in extra.items():
                 payload.setdefault(key, value)
         payload.pop("stream_options", None)
+        stream = bool(payload.pop("stream", False))
         timeout = payload.pop("timeout", None)
-        payload.pop("stream", None)
         base = str(getattr(self._client, "base_url", "")).rstrip("/")
         url = base + "/responses"
         headers = dict(getattr(self._client, "default_headers", {}) or {})
@@ -41,14 +85,41 @@ class _ResponsesCompat:
             headers["Authorization"] = "Bearer " + api_key
         headers.setdefault("Content-Type", "application/json")
         transport = getattr(self._client, "_client", None)
-        if transport is None:
+        owns_transport = transport is None
+        if owns_transport:
             transport = httpx.Client()
-        with _HTTP_LOCK:
-            response = transport.post(url, headers=headers, json=payload, timeout=timeout)
-        if response.status_code >= 400:
-            body = response.text
-            raise RuntimeError("HTTP %s: %s" % (response.status_code, body))
-        result = response.json()
+
+        request_kwargs = {"headers": headers, "json": payload}
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
+        if stream:
+            payload["stream"] = True
+            headers["Accept"] = "text/event-stream"
+
+            def events():
+                try:
+                    with _HTTP_LOCK:
+                        with transport.stream("POST", url, **request_kwargs) as response:
+                            if response.status_code >= 400:
+                                body = response.read().decode("utf-8", errors="replace")
+                                raise RuntimeError("HTTP %s: %s" % (response.status_code, body))
+                            yield from _iter_sse_events(response)
+                finally:
+                    if owns_transport:
+                        transport.close()
+
+            return _ResponseStream(events())
+
+        try:
+            with _HTTP_LOCK:
+                response = transport.post(url, **request_kwargs)
+                if response.status_code >= 400:
+                    body = response.text
+                    raise RuntimeError("HTTP %s: %s" % (response.status_code, body))
+                result = response.json()
+        finally:
+            if owns_transport:
+                transport.close()
         events = []
         for item in result.get("output") or []:
             for part in item.get("content") or []:
