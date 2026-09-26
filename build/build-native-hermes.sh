@@ -23,8 +23,12 @@ if [ ! -d "$SDK_ROOT" ]; then
   SDK_REPO_DIR=$BUILD_ROOT/sdks
   if [ ! -d "$SDK_REPO_DIR/.git" ]; then
     git clone --filter=blob:none --sparse --depth=1 "$SDK_REPO" "$SDK_REPO_DIR"
-    git -C "$SDK_REPO_DIR" sparse-checkout set "iPhoneOS${SDK_VERSION}.sdk"
   fi
+  if [ -n "${IOS_SDK_REF:-}" ]; then
+    git -C "$SDK_REPO_DIR" fetch --depth=1 origin "$IOS_SDK_REF"
+    git -C "$SDK_REPO_DIR" checkout --detach FETCH_HEAD
+  fi
+  git -C "$SDK_REPO_DIR" sparse-checkout set "iPhoneOS${SDK_VERSION}.sdk"
 fi
 [ -d "$SDK_ROOT/usr/include" ] || { echo "missing iOS SDK: $SDK_ROOT" >&2; exit 3; }
 

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" log -1 --format=%ct)}
+export SOURCE_DATE_EPOCH
 BUILD_ROOT=${BUILD_ROOT:-/root/hermes-build/native-ios}
 HOST_PYTHON=${HOST_PYTHON:-$BUILD_ROOT/host-python/bin/python3.13}
 PYTHON_LIB_ROOT=${PYTHON_LIB_ROOT:-$BUILD_ROOT/host-python/lib/python3.13}
@@ -54,24 +56,32 @@ for module in bootstrap.py server.py mcp_server.py; do [ -f "$WEBUI_SOURCE/$modu
 cp "$ROOT/overlay/python/sitecustomize.py" "$STAGE/python/sitecustomize.py"
 cp -a "$ROOT/overlay" "$STAGE/overlay"
 # Host CPython's lib-dynload varies by Linux distro and is not usable on iOS.
-find "$STAGE" \( -type f -o -type l \) -name '*.so' -delete
+find "$STAGE" \( -type f -o -type l \) \( -name '*.so' -o -name '*.pyc' -o -name '*.pyo' \) -delete
+find "$STAGE" -type d -name __pycache__ -prune -exec rm -rf {} +
 
 python3 - "$STAGE" "$ARCHIVE" <<'PY'
-import os, sys, zipfile
+import os, sys, time, zipfile
 root, output = sys.argv[1:]
+epoch = int(os.environ.get("SOURCE_DATE_EPOCH", "315532800"))
+fixed_time = time.gmtime(max(epoch, 315532800))[:6]
 with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_STORED) as z:
     seen = set()
-    for directory, _, names in os.walk(root):
+    for directory, dirs, names in os.walk(root):
+        dirs.sort()
         for name in sorted(names):
             source = os.path.join(directory, name)
             target = os.path.relpath(source, root).replace(os.sep, '/')
             if '.git' in target.split('/') or target in seen: continue
-            seen.add(target); z.write(source, target)
+            seen.add(target)
+            info = zipfile.ZipInfo(target, date_time=fixed_time)
+            info.create_system = 3
+            info.external_attr = (0o100644 << 16)
+            z.writestr(info, open(source, 'rb').read())
 with zipfile.ZipFile(output) as z:
     assert z.testzip() is None
     names = set(z.namelist())
     assert 'python/encodings/__init__.py' in names
     assert 'hermes/hermes_cli/main.py' in names
-    assert not any(n.endswith(('.so', '.dylib', '.pyd', '.wasm')) for n in names)
+    assert not any(n.endswith(('.so', '.dylib', '.pyd', '.wasm', '.pyc', '.pyo')) for n in names)
 PY
 printf 'built runtime: %s\n' "$ARCHIVE"
