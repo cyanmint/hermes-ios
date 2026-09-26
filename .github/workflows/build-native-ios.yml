@@ -112,6 +112,7 @@ jobs:
                   'python/encodings/__init__.py',
                   'python/site-packages/openai/lib/__init__.py',
                   'python/_sysconfigdata__ios_arm64-iphoneos.py',
+                  'python/ios_posix_spawn.py',
               }
               missing = sorted(required - names)
               if missing:
@@ -141,6 +142,7 @@ jobs:
           "$runtime_python" -S -c 'import importlib; cfg = importlib.import_module("_sysconfigdata__ios_arm64-iphoneos").build_time_vars; assert cfg.get("IPHONEOS_DEPLOYMENT_TARGET") == "13.0", cfg.get("IPHONEOS_DEPLOYMENT_TARGET"); assert "arm64-apple-ios" in cfg.get("CC", ""), cfg.get("CC"); print("iOS sysconfig import OK", cfg["IPHONEOS_DEPLOYMENT_TARGET"], cfg["CC"])'
           "$runtime_python" -S -m hermes_cli.main --help >/dev/null
           HERMES_IOS_TEST_RUNTIME_ZIP="$runtime_zip" "$runtime_python" -S "$GITHUB_WORKSPACE/tests/test_legacy_responses.py"
+          HERMES_IOS_TEST_RUNTIME_ZIP="$runtime_zip" "$runtime_python" -S "$GITHUB_WORKSPACE/tests/test_ios_posix_spawn.py"
           sha256sum hermes hermesrt.zip
 
       - name: Upload Hermes executable

@@ -59,6 +59,7 @@ for module in bootstrap.py server.py mcp_server.py; do [ -f "$WEBUI_SOURCE/$modu
 "$HOST_PYTHON" "$ROOT/overlay/patches/patch-webui-zip.py" "$STAGE/hermes-webui/api/config.py"
 [ -d "$STAGE/hermes/plugins/browser" ] && : > "$STAGE/hermes/plugins/browser/__init__.py"
 cp "$ROOT/overlay/python/sitecustomize.py" "$STAGE/python/sitecustomize.py"
+cp "$ROOT/overlay/python/ios_posix_spawn.py" "$STAGE/python/ios_posix_spawn.py"
 cp -a "$ROOT/overlay" "$STAGE/overlay"
 # zipimport does not resolve implicit namespace packages such as openai.lib.
 [ -d "$STAGE/python/site-packages/openai/lib" ] && : > "$STAGE/python/site-packages/openai/lib/__init__.py"

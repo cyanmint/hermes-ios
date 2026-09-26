@@ -166,7 +166,7 @@ curl -i http://127.0.0.1:8787/
 5. 保留原 ZIP 的 `python/` 条目，不重建 Python runtime
 6. 原子替换 `hermesrt.zip`
 
-iOS 禁止依赖 subprocess，因此升级不能调用系统 `git`。升级使用打包在 `python/` 中的纯 Python Dulwich，并在大型 Git object database 不适合 iOS 时使用 GitHub source archive fallback。
+普通未越狱 iOS 的 CPython 默认禁用 `fork` 和 `subprocess.Popen`。越狱版 Hermes 检测到 Procursus Bash 与系统 `posix_spawn` 可用时，会为终端启用受限的 `Popen` spawn 路径：命令在 Bash 内切换到配置工作目录，子进程使用独立 session，并关闭未显式映射的非标准文件描述符。此支持不等同于完整 `fork`，不涵盖任意 `preexec_fn`、`pass_fds` 或通用 Python 多进程；其他模块如升级仍使用纯 Python Dulwich，避免依赖系统 `git` 子进程。
 
 升级后必须重新验证：
 

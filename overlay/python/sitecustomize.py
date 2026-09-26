@@ -78,3 +78,8 @@ def _install_hash_fallbacks() -> None:
 
 _install_zip_metadata_fallbacks()
 _install_hash_fallbacks()
+
+if sys.platform == "ios":
+    from ios_posix_spawn import install_ios_posix_spawn_support
+
+    install_ios_posix_spawn_support()
