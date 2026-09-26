@@ -76,6 +76,8 @@ jobs:
           bash build/build-native-hermes.sh
 
       - name: Validate native Hermes and runtime
+        env:
+          BUILD_ROOT: ${{ runner.temp }}/hermes-build/native-ios
         run: |
           set -euo pipefail
           test -x hermes
@@ -91,6 +93,7 @@ jobs:
                   'hermes/hermes_cli/upgrade.py',
                   'hermes-webui/api/config.py',
                   'python/encodings/__init__.py',
+                  'python/site-packages/openai/lib/__init__.py',
               }
               missing = sorted(required - names)
               if missing:
@@ -100,7 +103,19 @@ jobs:
                   raise SystemExit(f'forbidden native entries: {bad[:10]}')
               if any('/.git/' in f'/{n}' for n in names):
                   raise SystemExit('embedded .git entries are not allowed')
+              if any(n.startswith('python/config-') or n.startswith('python/site-packages/bin/') or n.startswith('python/_sysconfigdata__linux_') for n in names):
+                  raise SystemExit('host CPython build artifacts found in hermesrt.zip')
           PY
+          runtime_zip="$PWD/hermesrt.zip"
+          export HOME="$RUNNER_TEMP/hermes-runtime-home"
+          export HERMES_HOME="$HOME/.hermes"
+          export PYTHONNOUSERSITE=1
+          export PYTHONPATH="$runtime_zip/python:$runtime_zip/hermes:$runtime_zip/hermes-webui:$runtime_zip/python/site-packages:$runtime_zip"
+          mkdir -p "$HOME"
+          runtime_python="$BUILD_ROOT/host-python/bin/python3.13"
+          test -x "$runtime_python"
+          "$runtime_python" -S -c 'import openai, pydantic, hermes_cli.main, hermes_cli.doctor_state; print("zip import smoke OK", openai.__version__, pydantic.__version__)'
+          "$runtime_python" -S -m hermes_cli.main --help >/dev/null
           sha256sum hermes hermesrt.zip
 
       - name: Upload Hermes executable

@@ -55,9 +55,25 @@ for module in bootstrap.py server.py mcp_server.py; do [ -f "$WEBUI_SOURCE/$modu
 [ -d "$STAGE/hermes/plugins/browser" ] && : > "$STAGE/hermes/plugins/browser/__init__.py"
 cp "$ROOT/overlay/python/sitecustomize.py" "$STAGE/python/sitecustomize.py"
 cp -a "$ROOT/overlay" "$STAGE/overlay"
+# zipimport does not resolve implicit namespace packages such as openai.lib.
+[ -d "$STAGE/python/site-packages/openai/lib" ] && : > "$STAGE/python/site-packages/openai/lib/__init__.py"
+# Host CPython's build config contains host-only headers and libpython.a, not iOS runtime data.
+rm -rf "$STAGE"/python/config-* "$STAGE/python/site-packages/bin"
+rm -f "$STAGE"/python/_sysconfigdata__linux_*.py
 # Host CPython's lib-dynload varies by Linux distro and is not usable on iOS.
 find "$STAGE" \( -type f -o -type l \) \( -name '*.so' -o -name '*.pyc' -o -name '*.pyo' \) -delete
 find "$STAGE" -type d -name __pycache__ -prune -exec rm -rf {} +
+"$HOST_PYTHON" - "$STAGE/python/site-packages" <<'PY'
+import csv, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+for record in sorted(root.glob('*.dist-info/RECORD')):
+    with record.open(encoding='utf-8', newline='') as source:
+        rows = list(csv.reader(source))
+    rows = [row for row in rows if not row or not row[0].startswith('bin/')]
+    with record.open('w', encoding='utf-8', newline='') as output:
+        csv.writer(output, lineterminator=chr(10)).writerows(rows)
+PY
 
 python3 - "$STAGE" "$ARCHIVE" <<'PY'
 import os, sys, time, zipfile
@@ -82,6 +98,9 @@ with zipfile.ZipFile(output) as z:
     names = set(z.namelist())
     assert 'python/encodings/__init__.py' in names
     assert 'hermes/hermes_cli/main.py' in names
-    assert not any(n.endswith(('.so', '.dylib', '.pyd', '.wasm', '.pyc', '.pyo')) for n in names)
+    if any(n.endswith(('.so', '.dylib', '.pyd', '.wasm', '.pyc', '.pyo')) for n in names):
+        raise SystemExit("host-native or compiled Python bytecode leaked into the runtime ZIP")
+    if any(n.startswith('python/config-') or n.startswith('python/site-packages/bin/') or n.startswith('python/_sysconfigdata__linux_') for n in names):
+        raise SystemExit("host Python build artifacts leaked into the runtime ZIP")
 PY
 printf 'built runtime: %s\n' "$ARCHIVE"
