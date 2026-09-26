@@ -53,10 +53,13 @@ jobs:
             build-essential ca-certificates clang-22 curl git lld-22 llvm-22 make perl \
             libbz2-dev libffi-dev libgdbm-dev liblzma-dev libncurses-dev \
             libreadline-dev libsqlite3-dev libssl-dev pkg-config unzip uuid-dev zlib1g-dev
+          sudo ln -sf /usr/lib/llvm-22/bin/clang /usr/bin/clang
+          sudo ln -sf /usr/lib/llvm-22/bin/clang++ /usr/bin/clang++
+          sudo ln -sf /usr/lib/llvm-22/bin/clang-cpp /usr/bin/clang-cpp
           sudo ln -sf /usr/lib/llvm-22/bin/llvm-ar /usr/bin/llvm-ar
           sudo ln -sf /usr/lib/llvm-22/bin/llvm-ranlib /usr/bin/llvm-ranlib
           echo /usr/lib/llvm-22/bin >> "$GITHUB_PATH"
-          /usr/lib/llvm-22/bin/clang --version
+          /usr/bin/clang --version
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
