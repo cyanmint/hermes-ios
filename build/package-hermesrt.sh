@@ -23,6 +23,7 @@ for package in acp_adapter agent cron gateway hermes_cli plugins providers tools
 done
 cp -a "$HERMES_SOURCE"/*.py "$STAGE/hermes/" 2>/dev/null || true
 cp -a "$ROOT/overlay/hermes/." "$STAGE/hermes/"
+"$HOST_PYTHON" "$ROOT/build/verify-hermes-overlay.py" "$STAGE/hermes" "$STAGE/hermes/hermes_cli/doctor_state.py"
 "$HOST_PYTHON" "$ROOT/overlay/patches/patch-ios-stability.py" "$STAGE/hermes"
 "$HOST_PYTHON" "$ROOT/overlay/patches/patch-agent-sdk-compat.py" "$STAGE/hermes/agent/agent_init.py"
 cp "$ROOT/overlay/hermes/agent/legacy_responses.py" "$STAGE/hermes/agent/legacy_responses.py"

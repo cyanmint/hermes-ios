@@ -293,6 +293,16 @@ def _check_state_db(should_fix: bool, f: Finding) -> None:
     _state_db_wal(f, should_fix, state_db_path)
 
 
+@doctor_check()
+def _check_checkpoint_store(should_fix: bool, f: Finding) -> None:
+    """Warn when the checkpoint store exceeds its configured footprint cap."""
+    from tools.checkpoint_manager import checkpoint_footprint_notice
+
+    notice = checkpoint_footprint_notice()
+    if notice:
+        check_warn(notice)
+
+
 def _gh_authenticated() -> bool:
     """Check if gh CLI is authenticated via token file or device flow."""
     try:
