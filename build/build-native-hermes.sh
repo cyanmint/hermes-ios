@@ -49,11 +49,15 @@ fi
 
 cat > "$TOOLBIN/arm64-apple-ios-clang" <<EOF
 #!/bin/sh
-exec clang --target=arm64-apple-ios${DEPLOYMENT_TARGET} -isysroot "$SDK_ROOT" "\$@" -fuse-ld=lld
+exec clang --target=arm64-apple-ios${DEPLOYMENT_TARGET} -isysroot "$SDK_ROOT" \\
+  -ffile-prefix-map="$BUILD_ROOT"=/hermes-build -ffile-prefix-map="$ROOT"=/hermes-source \\
+  "\$@" -fuse-ld=lld
 EOF
 cat > "$TOOLBIN/arm64-apple-ios-clang++" <<EOF
 #!/bin/sh
-exec clang++ --target=arm64-apple-ios${DEPLOYMENT_TARGET} -isysroot "$SDK_ROOT" "\$@" -fuse-ld=lld
+exec clang++ --target=arm64-apple-ios${DEPLOYMENT_TARGET} -isysroot "$SDK_ROOT" \\
+  -ffile-prefix-map="$BUILD_ROOT"=/hermes-build -ffile-prefix-map="$ROOT"=/hermes-source \\
+  "\$@" -fuse-ld=lld
 EOF
 cat > "$TOOLBIN/arm64-apple-ios-cpp" <<EOF
 #!/bin/sh
