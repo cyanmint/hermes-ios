@@ -100,6 +100,13 @@ jobs:
           test -x hermes
           test -s hermesrt.zip
           file hermes
+          python3 - <<'PY'
+          import subprocess
+          symbols = subprocess.run(['llvm-nm', '-g', 'hermes'], check=True, capture_output=True, text=True).stdout
+          if 'PyInit__hermesios' not in symbols:
+              raise SystemExit('native executable is missing linked _hermesios initializer')
+          print('_hermesios native initializer linked')
+          PY
           unzip -t hermesrt.zip
           python3 - <<'PY'
           import zipfile
@@ -113,6 +120,7 @@ jobs:
                   'python/site-packages/openai/lib/__init__.py',
                   'python/_sysconfigdata__ios_arm64-iphoneos.py',
                   'python/ios_posix_spawn.py',
+                  'overlay/cpython/ios_async_system.c',
               }
               missing = sorted(required - names)
               if missing:
