@@ -88,6 +88,8 @@ jobs:
             hermes hermesrt.zip hermes-ios.deb "2.0.0+${GITHUB_RUN_NUMBER}"
           dpkg-deb --info hermes-ios.deb
           bash tests/test_package_native_ios_deb.sh
+          bash build/generate-flat-apt-repo.sh hermes-ios.deb apt-repo
+          bash tests/test_generate_flat_apt_repo.sh
 
       - name: Validate native Hermes and runtime
         env:
@@ -184,9 +186,20 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Upload flat APT repository metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-apt-repo-native-ios
+          path: apt-repo/*
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Upload all native iOS assets to v2-native release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release upload v2-native hermes hermesrt.zip hermes-ios.deb --clobber
+          gh release upload v2-native \
+            hermes hermesrt.zip hermes-ios.deb \
+            apt-repo/Packages apt-repo/Packages.gz apt-repo/Packages.bz2 \
+            apt-repo/Packages.xz apt-repo/Release --clobber

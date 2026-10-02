@@ -191,16 +191,17 @@ workflow：
 - push 到 `default`
 - GitHub Actions 页面手动执行 `workflow_dispatch`
 
-成功后上传三个 Actions artifacts：
+成功后上传四个 Actions artifacts：
 
 ```text
 hermes-native-ios
 hermesrt-native-ios
 hermes-deb-native-ios
+hermes-apt-repo-native-ios
 ```
 
-每次构建成功后，workflow 会自动将三个文件上传到固定 Release
-[`v2-native`](https://github.com/cyanmint/hermes-ios/releases/tag/v2-native)，并用本次产物覆盖同名旧文件：
+每次构建成功后，workflow 会自动将三个安装产物和 APT 索引文件上传到固定 Release
+[`v2-native`](https://github.com/cyanmint/hermes-ios/releases/tag/v2-native)，并用本次产物覆盖同名旧文件。APT 源包含 `Packages`、`Packages.gz`、`Packages.bz2`、`Packages.xz` 和 `Release`。
 
 `hermes-ios.deb` 是面向 rootless 越狱环境的 `iphoneos-arm64` 包，要求 iOS 13 或更新版本。包内将二进制与 runtime 安装到 `/var/jb/usr/libexec/hermes-ios/`，并安装 `/var/jb/usr/bin/hermes` 启动器以设置 runtime 路径。
 
@@ -213,7 +214,25 @@ workflow 构建门禁会检查：
 - 禁止 `.so`、`.dylib`、`.pyd`、`.wasm`
 - 禁止嵌入 `.git`
 
-## 越狱设备安装
+## Sileo 添加软件源
+
+在 Sileo 中选择添加软件源，输入下面的平铺 APT 源地址（末尾 `/` 保留）：
+
+```text
+https://github.com/cyanmint/hermes-ios/releases/download/v2-native/
+```
+
+刷新软件源后搜索 `Hermes iOS` 或 `com.cyanmint.hermes-ios`，即可选择安装。该地址对应 APT 平铺仓库，索引与 `.deb` 同在 Release 根目录；无需另外添加 `dists` 路径。
+
+也可在 APT 源列表中使用：
+
+```text
+deb https://github.com/cyanmint/hermes-ios/releases/download/v2-native/ ./
+```
+
+此仓库目前未使用 GPG 签名，包管理器可能显示来源未认证警告；HTTPS 传输并不等价于软件包签名。确认发布者后再选择信任/安装。
+
+## 越狱设备直接安装
 
 从上述 Release 下载 `hermes-ios.deb`，通过 Sileo/Zebra 等包管理器打开并安装；也可复制到设备后使用 Procursus `dpkg -i ./hermes-ios.deb` 安装。安装完成后可直接运行：
 

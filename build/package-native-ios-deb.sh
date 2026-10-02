@@ -33,6 +33,8 @@ Package: com.cyanmint.hermes-ios
 Version: $VERSION
 Architecture: iphoneos-arm64
 Maintainer: cyanmint <cyanmint@cyanmint.net>
+Name: Hermes iOS
+Author: cyanmint
 Depends: firmware (>= 13.0)
 Homepage: https://github.com/cyanmint/hermes-ios
 Description: Native Hermes Agent runtime for jailbroken arm64 iOS devices

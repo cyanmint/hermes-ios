@@ -16,6 +16,8 @@ bash "$PACKAGE_SCRIPT" "$TMP/input/hermes" "$TMP/input/hermesrt.zip" "$TMP/herme
 [[ "$(dpkg-deb -f "$TMP/hermes-ios.deb" Version)" == 2.0.0+42 ]]
 [[ "$(dpkg-deb -f "$TMP/hermes-ios.deb" Architecture)" == iphoneos-arm64 ]]
 [[ "$(dpkg-deb -f "$TMP/hermes-ios.deb" Maintainer)" == 'cyanmint <cyanmint@cyanmint.net>' ]]
+[[ "$(dpkg-deb -f "$TMP/hermes-ios.deb" Name)" == 'Hermes iOS' ]]
+[[ "$(dpkg-deb -f "$TMP/hermes-ios.deb" Author)" == cyanmint ]]
 [[ "$(dpkg-deb -f "$TMP/hermes-ios.deb" Depends)" == 'firmware (>= 13.0)' ]]
 dpkg-deb --extract "$TMP/hermes-ios.deb" "$TMP/extracted"
 
