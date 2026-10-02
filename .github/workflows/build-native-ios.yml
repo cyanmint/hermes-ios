@@ -2,17 +2,6 @@ name: Build native iOS artifacts
 
 on:
   workflow_dispatch:
-    inputs:
-      create_release:
-        description: Create a GitHub Release after a successful build
-        required: true
-        default: false
-        type: boolean
-      release_tag:
-        description: Release tag; leave empty to use ios-<short-sha>-<run-number>
-        required: false
-        default: ''
-        type: string
   push:
     branches: [default]
 
@@ -92,6 +81,14 @@ jobs:
           grep -q '^CodeDirectory ' <<<"$signature"
           grep -q 'Hash type=sha256' <<<"$signature"
 
+      - name: Build rootless iOS Debian package
+        run: |
+          set -euo pipefail
+          bash build/package-native-ios-deb.sh \
+            hermes hermesrt.zip hermes-ios.deb "2.0.0+${GITHUB_RUN_NUMBER}"
+          dpkg-deb --info hermes-ios.deb
+          bash tests/test_package_native_ios_deb.sh
+
       - name: Validate native Hermes and runtime
         env:
           BUILD_ROOT: ${{ runner.temp }}/hermes-build/native-ios
@@ -99,6 +96,16 @@ jobs:
           set -euo pipefail
           test -x hermes
           test -s hermesrt.zip
+          test -s hermes-ios.deb
+          test "$(dpkg-deb -f hermes-ios.deb Package)" = com.cyanmint.hermes-ios
+          test "$(dpkg-deb -f hermes-ios.deb Architecture)" = iphoneos-arm64
+          test "$(dpkg-deb -f hermes-ios.deb Depends)" = 'firmware (>= 13.0)'
+          package_root=$(mktemp -d)
+          trap 'rm -rf "$package_root"' EXIT
+          dpkg-deb --extract hermes-ios.deb "$package_root"
+          cmp hermes "$package_root/var/jb/usr/libexec/hermes-ios/hermes"
+          cmp hermesrt.zip "$package_root/var/jb/usr/libexec/hermes-ios/hermesrt.zip"
+          test -x "$package_root/var/jb/usr/bin/hermes"
           file hermes
           python3 - <<'PY'
           import subprocess
@@ -169,14 +176,17 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Create requested release
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_release }}
+      - name: Upload hermes-ios.deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-deb-native-ios
+          path: hermes-ios.deb
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload all native iOS assets to v2-native release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          tag="$RELEASE_TAG_INPUT"
-          if [ -z "$tag" ]; then tag="ios-${GITHUB_SHA::7}-${GITHUB_RUN_NUMBER}"; fi
-          gh release create "$tag" hermes hermesrt.zip \
-            --title "Hermes native iOS $tag" --generate-notes
+          gh release upload v2-native hermes hermesrt.zip hermes-ios.deb --clobber

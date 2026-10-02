@@ -6,11 +6,12 @@ Hermes iOS 是面向越狱 iPad/iPhone arm64 的原生 Hermes Agent 运行时。
 
 ## 交付物
 
-构建会生成两个文件：
+CI 会生成三个可分开下载的产物：
 
 ```text
 hermes
 hermesrt.zip
+hermes-ios.deb
 ```
 
 ### `hermes`
@@ -46,6 +47,7 @@ build/
 ├── build-native-ios.sh       兼容入口，依次调用以上两个脚本
 ├── package-hermesrt.sh       runtime ZIP 打包
 ├── package-native-hermes.sh  native Hermes 链接
+├── package-native-ios-deb.sh rootless iOS Debian 安装包
 └── fetch-sources.sh          固定上游 Agent/WebUI 源码
 
 overlay/
@@ -189,26 +191,18 @@ workflow：
 - push 到 `default`
 - GitHub Actions 页面手动执行 `workflow_dispatch`
 
-手动执行时可以选择：
-
-```text
-create_release: true/false
-release_tag: 可选
-```
-
-成功后上传两个 artifacts：
+成功后上传三个 Actions artifacts：
 
 ```text
 hermes-native-ios
 hermesrt-native-ios
+hermes-deb-native-ios
 ```
 
-如果 `create_release=true`，workflow 会创建 Release 并附加：
+每次构建成功后，workflow 会自动将三个文件上传到固定 Release
+[`v2-native`](https://github.com/cyanmint/hermes-ios/releases/tag/v2-native)，并用本次产物覆盖同名旧文件：
 
-```text
-hermes
-hermesrt.zip
-```
+`hermes-ios.deb` 是面向 rootless 越狱环境的 `iphoneos-arm64` 包，要求 iOS 13 或更新版本。包内将二进制与 runtime 安装到 `/var/jb/usr/libexec/hermes-ios/`，并安装 `/var/jb/usr/bin/hermes` 启动器以设置 runtime 路径。
 
 workflow 构建门禁会检查：
 
@@ -219,7 +213,18 @@ workflow 构建门禁会检查：
 - 禁止 `.so`、`.dylib`、`.pyd`、`.wasm`
 - 禁止嵌入 `.git`
 
-## 真机部署
+## 越狱设备安装
+
+从上述 Release 下载 `hermes-ios.deb`，通过 Sileo/Zebra 等包管理器打开并安装；也可复制到设备后使用 Procursus `dpkg -i ./hermes-ios.deb` 安装。安装完成后可直接运行：
+
+```sh
+hermes --version
+hermes webui --host 127.0.0.1 --port 8787
+```
+
+包内 Hermes 已由 CI 使用 `ldid` ad-hoc 签名，且包管理器会按 `/var/jb` rootless 布局安装文件。
+
+## 手动真机部署
 
 GitHub Actions artifact 已完成 ad-hoc 签名。若使用本地构建的未签名可执行文件，先在设备上执行 `ldid -S ./hermes`；否则 iOS 会直接终止它。
 
